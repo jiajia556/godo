@@ -113,10 +113,24 @@ func ListFiles(dir string, extension string) ([]string, error) {
 	return files, nil
 }
 
-func DirExists(path string) bool {
+func IsDirExists(path string) bool {
+	if path == "" {
+		return false
+	}
 	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return info.IsDir()
+}
+
+func IsFileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }

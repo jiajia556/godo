@@ -6,3 +6,7 @@ import (
 
 type {{.ControllerStructName}} struct {}
 
+func New{{.ControllerStructName}}() *{{.ControllerStructName}} {
+	ctrl := new({{.ControllerStructName}})
+	return ctrl
+}

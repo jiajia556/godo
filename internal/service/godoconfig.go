@@ -11,34 +11,34 @@ import (
 	"sync"
 )
 
-type GoDoPackage struct {
+type GodoConfig struct {
 	inited        bool
 	ProjectName   string `json:"project_name"`
-	DefaultApi    string `json:"default_api"`
+	DefaultCmd    string `json:"default_cmd"`
 	DefaultGOOS   string `json:"default_goos"`
 	DefaultGOARCH string `json:"default_goarch"`
 }
 
 var (
-	godoPackage GoDoPackage
-	projectRoot string // the directory where gopackage.json or go.mod was found
+	godoConfig  GodoConfig
+	projectRoot string // the directory where godoconfig.json or go.mod was found
 	mu          sync.Mutex
 )
 
-// initGoPackage locates and loads gopackage.json or falls back to go.mod module.
+// initGodoConfig locates and loads godoconfig.json or falls back to go.mod module.
 // Behavior:
 // 1. If env GOD_PROJECT_ROOT is set, try that directory first.
-// 2. Otherwise, walk up from cwd searching for gopackage.json; if not found, use go.mod to derive module.
-// On success, sets godoPackage and projectRoot.
-func initGoPackage() error {
+// 2. Otherwise, walk up from cwd searching for godoconfig.json; if not found, use go.mod to derive module.
+// On success, sets godoConfig and projectRoot.
+func initGodoConfig() error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if godoPackage.inited {
+	if godoConfig.inited {
 		return nil
 	}
 
-	// 2) Walk up from cwd to root looking for gopackage.json or go.mod
+	// 2) Walk up from cwd to root looking for godoconfig.json or go.mod
 	startDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("cannot get working directory: %w", err)
@@ -47,21 +47,21 @@ func initGoPackage() error {
 	var triedPaths []string
 	dir := startDir
 	for {
-		tryPkg := filepath.Join(dir, "gopackage.json")
+		tryPkg := filepath.Join(dir, "godoconfig.json")
 		triedPaths = append(triedPaths, tryPkg)
 		if err := loadFromFileIfExists(tryPkg); err == nil {
 			projectRoot = filepath.Clean(dir)
-			godoPackage.inited = true
+			godoConfig.inited = true
 			return nil
 		}
 
-		// If gopackage.json not found, check go.mod as fallback
+		// If godoconfig.json not found, check go.mod as fallback
 		tryMod := filepath.Join(dir, "go.mod")
 		triedPaths = append(triedPaths, tryMod)
 		if exists(tryMod) {
 			if err := loadFromGoMod(tryMod); err == nil {
 				projectRoot = filepath.Clean(dir)
-				godoPackage.inited = true
+				godoConfig.inited = true
 				return nil
 			}
 			// continue walking up if parsing fails
@@ -74,53 +74,79 @@ func initGoPackage() error {
 		dir = parent
 	}
 
-	return fmt.Errorf("could not find gopackage.json nor parse go.mod module; attempted: %s", strings.Join(triedPaths, "; "))
+	return fmt.Errorf("could not find godoconfig.json nor parse go.mod module; attempted: %s", strings.Join(triedPaths, "; "))
 }
 
 func GetProjectName() (string, error) {
-	if !godoPackage.inited {
-		if err := initGoPackage(); err != nil {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
 			return "", err
 		}
 	}
-	if godoPackage.ProjectName == "" {
-		return "", errors.New("project name is empty in gopackage.json or go.mod")
+	if godoConfig.ProjectName == "" {
+		return "", errors.New("project name is empty in godoconfig.json or go.mod")
 	}
-	return godoPackage.ProjectName, nil
+	return godoConfig.ProjectName, nil
 }
 
-// GetDefaultApiCmd returns the absolute path to the default API command directory as specified in gopackage.json.
-func GetDefaultApiCmd() (string, error) {
-	if !godoPackage.inited {
-		if err := initGoPackage(); err != nil {
+func GetDefaultCmd() (string, error) {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
 			return "", err
 		}
 	}
-	return resolvePath("cmd/" + godoPackage.DefaultApi)
+	if godoConfig.DefaultCmd == "" {
+		return "", errors.New("default_cmd is empty in godoconfig.json")
+	}
+	return godoConfig.DefaultCmd, nil
 }
 
-// GetDefaultApiInternal returns the absolute path to the default API internal directory as specified in gopackage.json.
-func GetDefaultApiInternal() (string, error) {
-	if !godoPackage.inited {
-		if err := initGoPackage(); err != nil {
+// GetDefaultCmdCmd returns the absolute path to the default cmd cmd directory as specified in godoconfig.json.
+func GetDefaultCmdCmd() (string, error) {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
 			return "", err
 		}
 	}
-	return resolvePath("internal/" + godoPackage.DefaultApi)
+	return resolvePath("cmd/" + godoConfig.DefaultCmd)
+}
+
+// GetDefaultCmdInternal returns the absolute path to the default cmd internal directory as specified in godoconfig.json.
+func GetDefaultCmdInternal() (string, error) {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
+			return "", err
+		}
+	}
+	return resolvePath("internal/" + godoConfig.DefaultCmd)
 }
 
 // GetAbsPath resolves the given path to an absolute path based on projectRoot if it's not already absolute.
 func GetAbsPath(path string) (string, error) {
-	if !godoPackage.inited {
-		if err := initGoPackage(); err != nil {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
 			return "", err
 		}
 	}
 	return resolvePath(path)
 }
 
+// GetProjectRoot returns the absolute path of the discovered project root (where godoconfig.json or go.mod was found).
+// If not yet initialized, it will attempt initialization.
+func GetProjectRoot() (string, error) {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
+			return "", err
+		}
+	}
+	if projectRoot == "" {
+		return "", errors.New("project root is unknown; godoconfig.json and go.mod not found during initialization")
+	}
+	return projectRoot, nil
+}
+
 // loadFromFileIfExists tries to read and unmarshal the given path if it exists.
-// On success, it fills godoPackage (but does not set projectRoot - caller must set it).
+// On success, it fills godoConfig (but does not set projectRoot - caller must set it).
 func loadFromFileIfExists(path string) error {
 	if !exists(path) {
 		return fmt.Errorf("not found: %s", path)
@@ -129,14 +155,14 @@ func loadFromFileIfExists(path string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := json.Unmarshal(data, &godoPackage); err != nil {
+	if err := json.Unmarshal(data, &godoConfig); err != nil {
 		return fmt.Errorf("unmarshal %s: %w", path, err)
 	}
-	ensureDefaults(&godoPackage)
+	ensureDefaults(&godoConfig)
 	return nil
 }
 
-// loadFromGoMod parses module name from go.mod and fills godoPackage.ProjectName.
+// loadFromGoMod parses module name from go.mod and fills godoConfig.ProjectName.
 // Caller should set projectRoot on success.
 func loadFromGoMod(modPath string) error {
 	f, err := os.Open(modPath)
@@ -151,8 +177,8 @@ func loadFromGoMod(modPath string) error {
 		if strings.HasPrefix(line, "module ") {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {
-				godoPackage.ProjectName = parts[1]
-				ensureDefaults(&godoPackage)
+				godoConfig.ProjectName = parts[1]
+				ensureDefaults(&godoConfig)
 				return nil
 			}
 		}
@@ -163,7 +189,7 @@ func loadFromGoMod(modPath string) error {
 	return errors.New("module directive not found in go.mod")
 }
 
-func ensureDefaults(gp *GoDoPackage) {
+func ensureDefaults(gp *GodoConfig) {
 	if gp.DefaultGOOS == "" {
 		gp.DefaultGOOS = "linux"
 	}
@@ -187,9 +213,9 @@ func resolvePath(cfgPath string) (string, error) {
 	if filepath.IsAbs(cfgPath) {
 		return filepath.Clean(cfgPath), nil
 	}
-	// ensure gopackage initialized so projectRoot may be set
-	if !godoPackage.inited {
-		if err := initGoPackage(); err != nil {
+	// ensure godoconfig initialized so projectRoot may be set
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
 			// fallback: join with cwd
 			cwd, _ := os.Getwd()
 			return filepath.Clean(filepath.Join(cwd, cfgPath)), nil

@@ -14,6 +14,9 @@ import (
 )
 
 func genCmd(cmdName string) {
+	if service.IsCmdExists(cmdName) {
+		utils.OutputFatal("Error: cmd already exists")
+	}
 	templateDir := templates.DEFAULT_TEMPLATE_DIR
 	cmdDirs := []string{templateDir + "/cmd", templateDir + "/internal/default-api"}
 	for _, cmdDir := range cmdDirs {
@@ -32,9 +35,6 @@ func genCmd(cmdName string) {
 				utils.OutputFatal(err)
 			}
 			dirPath := filepath.Dir(path)
-			if utils.DirExists(dirPath) {
-				utils.OutputFatal(cmdName, "already exists")
-			}
 			err = os.MkdirAll(dirPath, 0755)
 			if err != nil {
 				utils.OutputFatal(err)
@@ -59,7 +59,7 @@ func genCmd(cmdName string) {
 
 			ProjectNameTmpls := []string{
 				"go.mod", "main.go",
-				"godopackage.json",
+				"godoconfig.json",
 				"baserecord.go",
 				"baselist.go",
 				"outputmsg.go",

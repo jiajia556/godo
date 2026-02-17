@@ -54,7 +54,7 @@ func initProject(name string) {
 
 		ProjectNameTmpls := []string{
 			"go.mod", "main.go",
-			"godopackage.json",
+			"godoconfig.json",
 			"baserecord.go",
 			"baselist.go",
 			"outputmsg.go",

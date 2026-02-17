@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type NumInt interface {
@@ -39,9 +41,12 @@ func InputNum[T comparable](msg string) (num T, err error) {
 
 func InputStr(msg string) (str string, err error) {
 	fmt.Println(msg)
-	_, err = fmt.Scanf("%s", &str)
+	reader := bufio.NewReader(os.Stdin)
+	str, err = reader.ReadString('\n')
 	if err != nil {
 		return
 	}
+	str = strings.Trim(str, "\r\n")
+	str = strings.Trim(str, "\n")
 	return
 }

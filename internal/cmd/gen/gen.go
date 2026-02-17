@@ -1,7 +1,10 @@
 package gen
 
 import (
+	"github.com/jiajia556/godo/internal/cmd/gen/act"
 	"github.com/jiajia556/godo/internal/cmd/gen/cmd"
+	"github.com/jiajia556/godo/internal/cmd/gen/ctrl"
+	"github.com/jiajia556/godo/internal/cmd/gen/rt"
 	"github.com/spf13/cobra"
 )
 
@@ -18,5 +21,8 @@ func GetCommand() *cobra.Command {
 func init() {
 	genCmd.AddCommand(
 		cmd.GetCommand(),
+		ctrl.GetCommand(),
+		act.GetCommand(),
+		rt.GetCommand(),
 	)
 }
