@@ -1,0 +1,41 @@
+package models
+
+import "{{.ProjectName}}/internal/common/database/mysql"
+
+type DBRecord interface {
+	SetCtx(ctx *mysql.TxContext)
+	SetData(data DBData)
+}
+type BaseList[T DBData, R DBRecord] struct {
+	*mysql.TxContext
+	Records []T
+	total   int64
+}
+
+func (l *BaseList[T, R]) FindAll() *BaseList[T, R] {
+	l.DB().Find(&l.Records)
+	return l
+}
+
+func (l *BaseList[T, R]) IsEmpty() bool {
+	return len(l.Records) == 0
+}
+
+func (l *BaseList[T, R]) GetTotal() int64 {
+	return l.total
+}
+
+func (l *BaseList[T, R]) SetTotal(total int64) {
+	l.total = total
+}
+
+func (l *BaseList[T, R]) Foreach(fn func(key int, value R) (isBreak bool)) {
+	for k, data := range l.Records {
+		var r R
+		r.SetCtx(l.TxContext)
+		r.SetData(data)
+		if fn(k, r) {
+			break
+		}
+	}
+}

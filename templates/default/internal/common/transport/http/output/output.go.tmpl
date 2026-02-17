@@ -1,0 +1,149 @@
+package output
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// ErrorCode represents error code type
+type ErrorCode int
+
+var defaultLang = "zh"
+
+// Output struct for building API response
+type Output struct {
+	c *gin.Context
+
+	code  ErrorCode
+	msg   string
+	data  interface{}
+	lang  string
+	other interface{}
+	total int64
+}
+
+var msgMap map[ErrorCode]map[string]string
+
+func Init(msg map[ErrorCode]map[string]string) {
+	msgMap = msg
+}
+
+// NewOutput creates a new Output instance
+func NewOutput(c *gin.Context, code ErrorCode) *Output {
+	if msgMap == nil {
+		panic("not init output")
+	}
+	lang := c.GetHeader("Language")
+	if lang == "" {
+		lang = defaultLang
+	}
+
+	msg := ""
+	if msgs, ok := msgMap[code]; ok {
+		msg = msgs[lang]
+	}
+
+	return &Output{
+		c:     c,
+		code:  code,
+		data:  nil,
+		lang:  lang,
+		msg:   msg,
+		total: -1,
+	}
+}
+
+// SetData sets data
+func (out *Output) SetData(data interface{}) *Output {
+	out.data = data
+	return out
+}
+
+// SetMsg sets message
+func (out *Output) SetMsg(msg string) *Output {
+	out.msg = msg
+	return out
+}
+
+// AppendMsg appends message
+func (out *Output) AppendMsg(msg string) *Output {
+	if out.msg == "" {
+		out.msg = msg
+	} else {
+		var builder strings.Builder
+		builder.WriteString(out.msg)
+		builder.WriteString(msg)
+		out.msg = builder.String()
+	}
+	return out
+}
+
+// SetTotal sets total count of data
+func (out *Output) SetTotal(total int64) *Output {
+	out.total = total
+	return out
+}
+
+// GetCode gets error code
+func (out *Output) GetCode() ErrorCode {
+	return out.code
+}
+
+// GetMsg gets message
+func (out *Output) GetMsg() string {
+	return out.msg
+}
+
+// GetData gets data
+func (out *Output) GetData() interface{} {
+	return out.data
+}
+
+// Out sends JSON response
+func (out *Output) Out() {
+	if out.data == nil {
+		if out.total == 0 {
+			out.data = make([]interface{}, 0)
+		} else {
+			out.data = gin.H{}
+		}
+	}
+	result := gin.H{
+		"code": out.code,
+		"msg":  out.msg,
+		"data": out.data,
+	}
+	if out.total >= 0 {
+		result["total"] = out.total
+	}
+	out.c.JSON(http.StatusOK, result)
+}
+
+func getLang(c *gin.Context) string {
+	lang := c.GetHeader("Language")
+	if lang == "" {
+		lang = c.GetHeader("Accept-Language")
+	}
+	if lang == "" {
+		lang = defaultLang
+	}
+	return lang
+}
+
+func Success(c *gin.Context) {
+	NewOutput(c, 0).Out()
+}
+
+func SuccessWithData(c *gin.Context, data interface{}) {
+	NewOutput(c, 0).SetData(data).Out()
+}
+
+func Error(c *gin.Context, code ErrorCode) {
+	NewOutput(c, code).Out()
+}
+
+func Page(c *gin.Context, data interface{}, total int64) {
+	NewOutput(c, 0).SetData(data).SetTotal(total).Out()
+}

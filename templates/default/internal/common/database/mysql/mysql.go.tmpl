@@ -1,0 +1,90 @@
+package mysql
+
+import (
+	"errors"
+	"fmt"
+
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
+)
+
+type MysqlConfig struct {
+	Host     string          `json:"host" yaml:"host"`
+	User     string          `json:"user" yaml:"user"`
+	Password string          `json:"password" yaml:"password"`
+	DBName   string          `json:"db_name" yaml:"db_name"`
+	Port     int             `json:"port" yaml:"port"`
+	Prefix   string          `json:"prefix" yaml:"prefix"`
+	Charset  string          `json:"charset" yaml:"charset"`
+	LogLevel logger.LogLevel `json:"log_level" yaml:"log_level"`
+}
+
+// SqlDB .
+var (
+	sqlDB *gorm.DB
+)
+
+// InitMysql .
+func InitMysql(conf MysqlConfig) error {
+	var err error
+
+	param := fmt.Sprintf("%s:%s@(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
+		conf.User, conf.Password, conf.Host, conf.Port, conf.DBName, conf.Charset)
+	sqlDB, err = gorm.Open(
+		mysql.Open(param), &gorm.Config{
+			NamingStrategy: schema.NamingStrategy{
+				TablePrefix:   conf.Prefix, // 表名前缀
+				SingularTable: true,        // 使用单数表名
+			},
+			Logger: logger.Default.LogMode(conf.LogLevel),
+		})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetDB .
+func GetDB() *gorm.DB {
+	if sqlDB == nil {
+		panic("mysql not init")
+	}
+	return sqlDB
+}
+
+func NewTxContext() *TxContext {
+	return &TxContext{GetDB()}
+}
+
+type TxContext struct {
+	tx *gorm.DB
+}
+
+func (m *TxContext) Begin() error {
+	tx := GetDB().Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	m.tx = tx
+	return nil
+}
+
+func (m *TxContext) Commit() error {
+	if m.tx == nil {
+		return errors.New("no active transaction")
+	}
+	return m.tx.Commit().Error
+}
+
+func (m *TxContext) Rollback() error {
+	if m.tx == nil {
+		return errors.New("no active transaction")
+	}
+	return m.tx.Rollback().Error
+}
+
+func (m *TxContext) DB() *gorm.DB {
+	return m.tx
+}

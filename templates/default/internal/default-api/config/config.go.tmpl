@@ -1,0 +1,27 @@
+package config
+
+import (
+	"{{.ProjectName}}/internal/common/config"
+	"{{.ProjectName}}/internal/common/database/mysql"
+)
+
+type Config struct {
+	Mysql mysql.MysqlConfig `json:"mysql" yaml:"mysql"`
+}
+
+var cfg *config.ConfigManager[Config]
+
+func Load(path string) error {
+	cfg = config.NewManager[Config]()
+	return cfg.Load(path)
+}
+
+func GetConfig() *Config {
+	res := cfg.Get()
+	return &res
+}
+
+func CreateConfigFile(path string) error {
+	cfg = config.NewManager[Config]()
+	return cfg.Save(path)
+}

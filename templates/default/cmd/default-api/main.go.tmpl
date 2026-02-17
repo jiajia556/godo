@@ -1,0 +1,39 @@
+package main
+
+import (
+	"flag"
+
+	"{{.ProjectName}}/internal/common/database/mysql"
+	"{{.ProjectName}}/internal/common/transport/http/output"
+	"{{.ProjectName}}/internal/{{.CmdName}}/config"
+	"{{.ProjectName}}/internal/{{.CmdName}}/transport/http/outputmsg"
+	"{{.ProjectName}}/internal/{{.CmdName}}/transport/http/router"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	var configPath string
+	var port string
+	flag.StringVar(&port, "port", "8080", "port")
+	flag.StringVar(&configPath, "config", "./config.yaml", "Config json file path")
+	flag.Parse()
+	err := config.Load(configPath)
+	if err != nil {
+		panic(err)
+	}
+
+	err = mysql.InitMysql(config.GetConfig().Mysql)
+	if err != nil {
+		panic(err)
+	}
+
+	output.Init(outputmsg.MsgMaps)
+
+	rt := gin.Default()
+	router.Register(rt)
+	err = rt.Run(":" + port)
+	if err != nil {
+		panic(err)
+	}
+}

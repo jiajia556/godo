@@ -1,0 +1,40 @@
+package models
+
+import "{{.ProjectName}}/internal/common/database/mysql"
+
+type DBData interface {
+	ID() uint64
+}
+type BaseRecord[T DBData] struct {
+	*mysql.TxContext
+	Data T
+}
+
+func (m *BaseRecord[T]) Exists() bool {
+	return m.Data.ID() > 0
+}
+
+func (m *BaseRecord[T]) Create() error {
+	return m.DB().Create(&m.Data).Error
+}
+
+func (m *BaseRecord[T]) Update() error {
+	return m.DB().Save(&m.Data).Error
+}
+
+func (m *BaseRecord[T]) Read(id uint64) *BaseRecord[T] {
+	m.DB().Take(&m.Data, id)
+	return m
+}
+
+func (m *BaseRecord[T]) Delete() error {
+	return m.DB().Delete(&m.Data).Error
+}
+
+func (m *BaseRecord[T]) SetCtx(ctx *mysql.TxContext) {
+	m.TxContext = ctx
+}
+
+func (m *BaseRecord[T]) SetData(data DBData) {
+	m.Data = data.(T)
+}

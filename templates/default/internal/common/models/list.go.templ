@@ -1,0 +1,23 @@
+package {{.ModelPkg}}
+
+import (
+	"{{.ProjectName}}/internal/common/database/mysql"
+	"{{.ProjectName}}/internal/common/models"
+)
+
+type List struct {
+	*models.BaseList[{{.ModelStruct}}, Record]
+}
+
+func NewList(ctx *mysql.TxContext) *List {
+	if ctx == nil {
+		ctx = mysql.NewTxContext()
+	}
+	l := &List{
+		BaseList: &models.BaseList[{{.ModelStruct}}, Record]{
+			TxContext: ctx,
+		},
+	}
+
+	return l
+}
