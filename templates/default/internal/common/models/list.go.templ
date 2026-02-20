@@ -6,7 +6,7 @@ import (
 )
 
 type List struct {
-	*models.BaseList[{{.ModelStruct}}, Record]
+	*models.BaseList[{{.ModelStructName}}, Record]
 }
 
 func NewList(ctx *mysql.TxContext) *List {
@@ -14,7 +14,7 @@ func NewList(ctx *mysql.TxContext) *List {
 		ctx = mysql.NewTxContext()
 	}
 	l := &List{
-		BaseList: &models.BaseList[{{.ModelStruct}}, Record]{
+		BaseList: &models.BaseList[{{.ModelStructName}}, Record]{
 			TxContext: ctx,
 		},
 	}

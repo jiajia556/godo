@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/jiajia556/godo/internal/cmd/build"
 	"github.com/jiajia556/godo/internal/cmd/gen"
 	initproj "github.com/jiajia556/godo/internal/cmd/init"
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ func init() {
 	rootCmd.AddCommand(
 		initproj.GetCommand(),
 		gen.GetCommand(),
+		build.GetCommand(),
 	)
 
 	// 全局 flags

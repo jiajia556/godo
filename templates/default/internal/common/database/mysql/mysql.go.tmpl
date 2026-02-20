@@ -55,11 +55,12 @@ func GetDB() *gorm.DB {
 }
 
 func NewTxContext() *TxContext {
-	return &TxContext{GetDB()}
+	return &TxContext{GetDB(), 0}
 }
 
 type TxContext struct {
-	tx *gorm.DB
+	tx     *gorm.DB
+	status int8
 }
 
 func (m *TxContext) Begin() error {
@@ -68,6 +69,7 @@ func (m *TxContext) Begin() error {
 		return tx.Error
 	}
 	m.tx = tx
+	m.status = 1
 	return nil
 }
 
@@ -75,6 +77,10 @@ func (m *TxContext) Commit() error {
 	if m.tx == nil {
 		return errors.New("no active transaction")
 	}
+	if m.status != 1 {
+		return errors.New("not in transaction")
+	}
+	m.status = 0
 	return m.tx.Commit().Error
 }
 
@@ -82,6 +88,10 @@ func (m *TxContext) Rollback() error {
 	if m.tx == nil {
 		return errors.New("no active transaction")
 	}
+	if m.status != 1 {
+		return errors.New("not in transaction")
+	}
+	m.status = 0
 	return m.tx.Rollback().Error
 }
 

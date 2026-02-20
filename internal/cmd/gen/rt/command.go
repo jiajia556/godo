@@ -9,7 +9,7 @@ var routerCmd = &cobra.Command{
 	Example: "  godo gen rt",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmdName, _ := cmd.Flags().GetString("cmd")
-		genRouter(cmdName)
+		GenRouter(cmdName)
 	},
 }
 

@@ -20,7 +20,7 @@ func NewRecord(ctx *mysql.TxContext) *Record {
 		ctx = mysql.NewTxContext()
 	}
 	r := &Record{
-		BaseRecord: &models.BaseRecord[User]{
+		BaseRecord: &models.BaseRecord[{{.ModelStructName}}]{
 			TxContext: ctx,
 			Data:      {{.ModelStructName}}{},
 		},

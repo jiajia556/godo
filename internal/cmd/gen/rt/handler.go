@@ -35,7 +35,7 @@ type routeGenerator struct {
 	projectRoot       string            // Current project root directory
 }
 
-func genRouter(cmdName string) {
+func GenRouter(cmdName string) {
 	var err error
 	if cmdName == "" {
 		cmdName, err = service.GetDefaultCmd()

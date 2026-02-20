@@ -96,9 +96,33 @@ func GetDefaultCmd() (string, error) {
 		}
 	}
 	if godoConfig.DefaultCmd == "" {
-		return "", errors.New("default_cmd is empty in godoconfig.json")
+		return "default-api", nil
 	}
 	return godoConfig.DefaultCmd, nil
+}
+
+func GetDefaultGOOS() (string, error) {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
+			return "", err
+		}
+	}
+	if godoConfig.DefaultGOOS == "" {
+		return "linux", nil
+	}
+	return godoConfig.DefaultGOOS, nil
+}
+
+func GetDefaultGOARCH() (string, error) {
+	if !godoConfig.inited {
+		if err := initGodoConfig(); err != nil {
+			return "", err
+		}
+	}
+	if godoConfig.DefaultGOARCH == "" {
+		return "amd64", nil
+	}
+	return godoConfig.DefaultGOARCH, nil
 }
 
 // GetDefaultCmdCmd returns the absolute path to the default cmd cmd directory as specified in godoconfig.json.
