@@ -10,19 +10,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ConfigManager 泛型配置管理器
+// ConfigManager is a generic config manager that loads/saves typed config data.
 type ConfigManager[T any] struct {
 	data T
 	path string
 }
 
-// NewManager 创建新的配置管理器
+// NewManager creates a new ConfigManager.
 func NewManager[T any]() *ConfigManager[T] {
 	var zero T
 	return &ConfigManager[T]{data: zero}
 }
 
-// Load 加载配置文件
+// Load reads and unmarshals the config file (JSON/YAML) into the manager.
 func (cm *ConfigManager[T]) Load(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -49,7 +49,7 @@ func (cm *ConfigManager[T]) Load(path string) error {
 	return nil
 }
 
-// Save 保存配置到文件
+// Save marshals and writes the config to the given path.
 func (cm *ConfigManager[T]) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -82,17 +82,17 @@ func (cm *ConfigManager[T]) Save(path string) error {
 	return nil
 }
 
-// Get 获取配置数据
+// Get returns the current config data.
 func (cm *ConfigManager[T]) Get() T {
 	return cm.data
 }
 
-// Set 设置配置数据
+// Set replaces the current config data.
 func (cm *ConfigManager[T]) Set(data T) {
 	cm.data = data
 }
 
-// Path 获取配置文件路径
+// Path returns the currently loaded config file path.
 func (cm *ConfigManager[T]) Path() string {
 	return cm.path
 }

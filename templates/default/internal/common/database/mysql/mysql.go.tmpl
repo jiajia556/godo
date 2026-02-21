@@ -35,8 +35,8 @@ func InitMysql(conf MysqlConfig) error {
 	sqlDB, err = gorm.Open(
 		mysql.Open(param), &gorm.Config{
 			NamingStrategy: schema.NamingStrategy{
-				TablePrefix:   conf.Prefix, // 表名前缀
-				SingularTable: true,        // 使用单数表名
+				TablePrefix:   conf.Prefix, // table name prefix
+				SingularTable: true,        // use singular table name
 			},
 			Logger: logger.Default.LogMode(conf.LogLevel),
 		})

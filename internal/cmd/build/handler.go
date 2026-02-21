@@ -9,6 +9,12 @@ import (
 
 func build(cmdName, version, goos, goarch string) {
 	var err error
+	if cmdName == "" {
+		cmdName, err = service.GetDefaultCmd()
+		if err != nil {
+			utils.OutputFatal(err)
+		}
+	}
 	if goos == "" {
 		goos, err = service.GetDefaultCmd()
 		if err != nil {

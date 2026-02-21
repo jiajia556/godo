@@ -40,7 +40,7 @@ func (r *CommandRunner) WithVerbose(verbose bool) *CommandRunner {
 func (r *CommandRunner) RunCommand(name string, args ...string) {
 	out, err := r.RunCommandOutput(name, args...)
 	if err != nil {
-		// 包含命令输出便于排查
+		// Include command output to make failures easier to diagnose.
 		if out != "" {
 			OutputFatal(fmt.Sprintf("Command %s failed: %v\nOutput:\n%s", name, err, out))
 		} else {
@@ -59,7 +59,7 @@ func (r *CommandRunner) RunCommandOutput(name string, args ...string) (string, e
 	}
 
 	if r.Verbose {
-		// 在交互式/调试场景下直接把输出流到控制台
+		// In verbose/debug scenarios, stream output directly to the console.
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -68,7 +68,7 @@ func (r *CommandRunner) RunCommandOutput(name string, args ...string) (string, e
 		return "", nil
 	}
 
-	// 默认模式：捕获并返回 CombinedOutput，便于日志/错误中包含详细信息
+	// Default mode: capture and return CombinedOutput so callers can attach it to logs/errors.
 	outputBytes, err := cmd.CombinedOutput()
 	return string(outputBytes), err
 }

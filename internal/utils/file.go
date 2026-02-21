@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// CopyFile 复制单个文件
+// CopyFile copies a single file from src to dst.
 func CopyFile(src, dst string) error {
 	source, err := os.Open(src)
 	if err != nil {
@@ -15,7 +15,7 @@ func CopyFile(src, dst string) error {
 	}
 	defer source.Close()
 
-	// 确保目标目录存在
+	// Ensure the destination directory exists.
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
 	}
@@ -34,7 +34,7 @@ func CopyFile(src, dst string) error {
 	return nil
 }
 
-// CopyDir 递归复制整个目录
+// CopyDir recursively copies a directory from src to dst.
 func CopyDir(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -63,7 +63,7 @@ func CopyDir(src, dst string) error {
 	return nil
 }
 
-// RemoveDir 删除整个目录
+// RemoveDir removes a directory tree.
 func RemoveDir(path string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return fmt.Errorf("remove directory: %w", err)
@@ -71,7 +71,7 @@ func RemoveDir(path string) error {
 	return nil
 }
 
-// ReadFile 读取文件内容
+// ReadFile reads a file and returns its content as string.
 func ReadFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -80,7 +80,7 @@ func ReadFile(path string) (string, error) {
 	return string(data), nil
 }
 
-// WriteFile 写入文件内容
+// WriteFile writes content into a file, creating parent directories if needed.
 func WriteFile(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
@@ -93,7 +93,8 @@ func WriteFile(path, content string) error {
 	return nil
 }
 
-// ListFiles 列出目录中的所有文件
+// ListFiles lists files in a directory (non-recursive). If extension is not empty,
+// only files with the given extension are returned.
 func ListFiles(dir string, extension string) ([]string, error) {
 	var files []string
 

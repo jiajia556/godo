@@ -2,7 +2,7 @@ package cmd
 
 import "github.com/jiajia556/godo/internal/utils"
 
-// Execute 程序主入口，执行 CLI 命令
+// Execute is the CLI entrypoint.
 func Execute() {
 	if err := GetRootCmd().Execute(); err != nil {
 		utils.OutputFatal(err)

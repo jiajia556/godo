@@ -7,13 +7,13 @@ import (
 	"time"
 )
 
-// Logger 简单日志工具
+// Logger is a tiny console logger.
 type Logger struct {
 	writer   io.Writer
 	debugLog bool
 }
 
-// NewLogger 创建新的logger
+// NewLogger creates a Logger. If debugMode is true, Debug logs are enabled.
 func NewLogger(debugMode bool) *Logger {
 	return &Logger{
 		writer:   os.Stdout,
@@ -21,25 +21,25 @@ func NewLogger(debugMode bool) *Logger {
 	}
 }
 
-// Info 输出信息日志
+// Info prints an informational message.
 func (l *Logger) Info(msg string, args ...interface{}) {
 	timestamp := time.Now().Format("15:04:05")
 	fmt.Fprintf(l.writer, "[%s] ℹ️  INFO: %s\n", timestamp, fmt.Sprintf(msg, args...))
 }
 
-// Warn 输出警告日志
+// Warn prints a warning message.
 func (l *Logger) Warn(msg string, args ...interface{}) {
 	timestamp := time.Now().Format("15:04:05")
 	fmt.Fprintf(l.writer, "[%s] ⚠️  WARN: %s\n", timestamp, fmt.Sprintf(msg, args...))
 }
 
-// Error 输出错误日志
+// Error prints an error message to stderr.
 func (l *Logger) Error(msg string, args ...interface{}) {
 	timestamp := time.Now().Format("15:04:05")
 	fmt.Fprintf(os.Stderr, "[%s] ❌ ERROR: %s\n", timestamp, fmt.Sprintf(msg, args...))
 }
 
-// Debug 输出调试日志（仅在调试模式下输出）
+// Debug prints a debug message when debug mode is enabled.
 func (l *Logger) Debug(msg string, args ...interface{}) {
 	if !l.debugLog {
 		return
@@ -48,7 +48,7 @@ func (l *Logger) Debug(msg string, args ...interface{}) {
 	fmt.Fprintf(l.writer, "[%s] 🐛 DEBUG: %s\n", timestamp, fmt.Sprintf(msg, args...))
 }
 
-// Success 输出成功日志
+// Success prints a success message.
 func (l *Logger) Success(msg string, args ...interface{}) {
 	timestamp := time.Now().Format("15:04:05")
 	fmt.Fprintf(l.writer, "[%s] ✅ SUCCESS: %s\n", timestamp, fmt.Sprintf(msg, args...))

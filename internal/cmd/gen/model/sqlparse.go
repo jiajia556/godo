@@ -58,15 +58,17 @@ func extractTableName(sql string) (string, error) {
 	return toCamelCase(matches[1]), nil
 }
 
-// 改进：基于括号层级与引号状态提取字段定义，避免被类型/注释/索引内的逗号误分割
+// extractFieldDefinitions extracts column definitions from a CREATE TABLE statement.
+// It uses a simple state machine (paren nesting + quote tracking) so commas in
+// types, comments, or indexes won't break the split.
 func extractFieldDefinitions(sql string) ([]string, error) {
-	// 找到第一个左括号（字段定义起点）
+	// Find the first "(" that begins the column definition block.
 	start := strings.Index(sql, "(")
 	if start < 0 {
 		return nil, fmt.Errorf("field definitions not found")
 	}
 
-	// 从 start 向后找到匹配的右括号（考虑嵌套）
+	// Find the matching closing ")" (taking nested parentheses into account).
 	level := 0
 	end := -1
 	for i := start; i < len(sql); i++ {
@@ -87,10 +89,9 @@ func extractFieldDefinitions(sql string) ([]string, error) {
 
 	inner := sql[start+1 : end]
 
-	// 按最外层逗号分割（忽略括号内和引号内的逗号）
+	// Split by top-level commas (ignore commas inside parentheses/quotes).
 	defs := splitFieldDefinitions(inner)
 
-	// 清理并返回
 	out := make([]string, 0, len(defs))
 	for _, d := range defs {
 		s := strings.TrimSpace(d)
@@ -101,8 +102,8 @@ func extractFieldDefinitions(sql string) ([]string, error) {
 	return out, nil
 }
 
-// splitFieldDefinitions: 在没有正则限制下按最外层逗号切分定义
-// 新增：考虑单/双引号以及反斜杠转义，避免在引号内分割
+// splitFieldDefinitions splits a column-definition block by top-level commas.
+// It tracks quote state and backslash escapes to avoid splitting inside strings.
 func splitFieldDefinitions(body string) []string {
 	var defs []string
 	var cur strings.Builder
@@ -114,15 +115,15 @@ func splitFieldDefinitions(body string) []string {
 	for i := 0; i < len(body); i++ {
 		ch := body[i]
 
-		// 处理转义：如果前一个字符是反斜杠，则当前字符是被转义的
+		// Handle backslash escaping.
 		if ch == '\\' && !escaped {
 			escaped = true
 			cur.WriteByte(ch)
 			continue
 		}
 
-		// 如果在单引号或双引号内，被转义字符不作为引号结束
 		if !escaped {
+			// Toggle quote state (only when not already inside the other quote kind).
 			if ch == '\'' && !inDouble {
 				inSingle = !inSingle
 				cur.WriteByte(ch)
@@ -135,7 +136,7 @@ func splitFieldDefinitions(body string) []string {
 			}
 		}
 
-		// 非引号中且非转义，处理括号层级
+		// When not inside quotes, update parentheses nesting.
 		if !inSingle && !inDouble {
 			if ch == '(' {
 				level++
@@ -146,7 +147,7 @@ func splitFieldDefinitions(body string) []string {
 			}
 		}
 
-		// 分割条件：最外层逗号（level==0）且不在任意引号内
+		// Split on top-level comma.
 		if ch == ',' && level == 0 && !inSingle && !inDouble {
 			part := strings.TrimSpace(cur.String())
 			if part != "" {
@@ -157,13 +158,11 @@ func splitFieldDefinitions(body string) []string {
 			continue
 		}
 
-		// 正常写入当前字符
 		cur.WriteByte(ch)
-		// 重置 escaped 标志（只有紧接着的字符被转义）
 		escaped = false
 	}
 
-	// 追加剩余
+	// Append the remaining tail.
 	if s := strings.TrimSpace(cur.String()); s != "" {
 		defs = append(defs, s)
 	}
@@ -179,16 +178,17 @@ func parseField(def string) (fieldInfo, error) {
 	}
 
 	fieldName := matches[1]
-	// 仅对以小写字母开头的 Column 名进行生成��保持旧逻辑）
+	// Keep legacy behavior: only generate fields for columns starting with a-z.
 	if len(fieldName) == 0 || []byte(fieldName)[0] < 'a' || []byte(fieldName)[0] > 'z' {
 		return fieldInfo{}, nil
 	}
 	typeInfo := strings.ToLower(strings.TrimSpace(matches[2]))
 
-	// 保留原有类型映射
+	// Preserve the original type mapping.
 	goType, tags := mapTypeAndTags(typeInfo)
 
-	// 保守增强：识别常见约束并加入 tags（不改变 goType 的映射）
+	// Conservative enhancement: detect common constraints and add gorm tags.
+	// (Do not change the Go type mapping.)
 	if strings.Contains(typeInfo, "unsigned") {
 		tags["unsigned"] = "true"
 	}
@@ -201,7 +201,7 @@ func parseField(def string) (fieldInfo, error) {
 	if strings.Contains(typeInfo, "not null") {
 		tags["notNull"] = "true"
 	}
-	// default 值提取（尽量简单提取）
+	// Best-effort DEFAULT value extraction.
 	if idx := strings.Index(strings.ToUpper(typeInfo), "DEFAULT "); idx >= 0 {
 		after := strings.TrimSpace(typeInfo[idx+8:])
 		if after != "" {

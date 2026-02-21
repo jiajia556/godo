@@ -19,7 +19,7 @@ import (
 
 func genModel(from string) {
 	defer runPostGenerationTasks()
-	
+
 	var createTables []string
 	var err error
 	if strings.HasSuffix(from, ".sql") {
@@ -85,7 +85,7 @@ func extractCreateTablesFromSqlFile(filePath string) ([]string, error) {
 		return nil, err
 	}
 
-	// 处理最后可能未闭合的语句
+	// Flush the last statement if we reached EOF while capturing.
 	if capturing && currentStmt.Len() > 0 {
 		createTables = append(createTables, currentStmt.String())
 	}

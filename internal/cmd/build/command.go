@@ -6,13 +6,15 @@ import (
 )
 
 var buildCmd = &cobra.Command{
-	Use:     "build [app-name]",
-	Short:   "",
-	Long:    "",
-	Example: "  god build default-api\n  god build default-api --version v1.2.0\n  god build payment-service --goos linux --goarch amd64",
-	Args:    cobra.ExactArgs(1),
+	Use:     "build [cmd-name]",
+	Short:   "Build a cmd module and output the binary to bin/",
+	Long:    "Build compiles the specified cmd module (e.g. 'default-api') and writes the binary to the project's bin/ directory.\n\nBefore building, it will regenerate the HTTP router (same as running 'godo gen rt') to keep routes in sync with controllers.\n\nYou can optionally set the build version and cross-compile by specifying --goos/--goarch.",
+	Example: "  godo build default-api\n  godo build default-api --version v1.2.0\n  godo build payment-service --goos linux --goarch amd64",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmdName := args[0]
+		cmdName := ""
+		if len(args) > 0 {
+			cmdName = args[0]
+		}
 		version, _ := cmd.Flags().GetString("version")
 		goos, _ := cmd.Flags().GetString("goos")
 		goarch, _ := cmd.Flags().GetString("goarch")

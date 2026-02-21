@@ -16,19 +16,17 @@ Complete documentation is available at: https://github.com/jiajia556/godo`,
 	Version: "1.0.0",
 }
 
-// GetRootCmd 获取根命令
+// GetRootCmd returns the root cobra command.
 func GetRootCmd() *cobra.Command {
 	return rootCmd
 }
 
 func init() {
-	// 注册子命令
 	rootCmd.AddCommand(
 		initproj.GetCommand(),
 		gen.GetCommand(),
 		build.GetCommand(),
 	)
 
-	// 全局 flags
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output")
 }
