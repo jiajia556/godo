@@ -3,6 +3,9 @@ package service
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"strings"
 
@@ -76,6 +79,14 @@ func WriteActions(controllerFilePath, controllerStructName string, actions []str
 		return err
 	}
 	for _, v := range actionList {
+		actExists, err := ControllerHasMethod(controllerFilePath, controllerStructName, v.Name)
+		if err != nil {
+			return err
+		}
+		if actExists {
+			fmt.Println("action method already exists: ", v.Name)
+			continue
+		}
 		methodStr := fmt.Sprintf(CONTROLLER_ACTION_TMPL,
 			v.HTTPMethod,
 			controllerStructName,
@@ -87,6 +98,68 @@ func WriteActions(controllerFilePath, controllerStructName string, actions []str
 		}
 	}
 	return nil
+}
+
+// ControllerHasMethod reports whether controllerFilePath already defines a method
+// with name methodName on receiver type controllerStructName.
+// It matches both value receiver (ctrl T) and pointer receiver (ctrl *T).
+func ControllerHasMethod(controllerFilePath, controllerStructName, methodName string) (bool, error) {
+	if controllerFilePath == "" {
+		return false, fmt.Errorf("controllerFilePath is empty")
+	}
+	if controllerStructName == "" {
+		return false, fmt.Errorf("controllerStructName is empty")
+	}
+	if methodName == "" {
+		return false, fmt.Errorf("methodName is empty")
+	}
+
+	fset := token.NewFileSet()
+	// ParseComments not required for this check, but harmless.
+	file, err := parser.ParseFile(fset, controllerFilePath, nil, parser.ParseComments)
+	if err != nil {
+		return false, fmt.Errorf("parse controller file %s: %w", controllerFilePath, err)
+	}
+
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || fn.Name == nil {
+			continue
+		}
+		if fn.Name.Name != methodName {
+			continue
+		}
+		if receiverTypeName(fn.Recv) == controllerStructName {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// receiverTypeName extracts receiver base type name from receiver field list.
+// Examples:
+//
+//	(ctrl T)    -> "T"
+//	(ctrl *T)   -> "T"
+//
+// otherwise -> ""
+func receiverTypeName(recv *ast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 {
+		return ""
+	}
+
+	// A method receiver list should have exactly 1 entry, but we just take the first.
+	t := recv.List[0].Type
+	switch x := t.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.StarExpr:
+		if id, ok := x.X.(*ast.Ident); ok {
+			return id.Name
+		}
+	}
+	return ""
 }
 
 func makeActions(actions []string) (res []method, err error) {

@@ -16,13 +16,13 @@ func build(cmdName, version, goos, goarch string) {
 		}
 	}
 	if goos == "" {
-		goos, err = service.GetDefaultCmd()
+		goos, err = service.GetDefaultGOOS()
 		if err != nil {
 			utils.OutputFatal(err)
 		}
 	}
 	if goarch == "" {
-		goarch, err = service.GetDefaultCmd()
+		goarch, err = service.GetDefaultGOARCH()
 		if err != nil {
 			utils.OutputFatal(err)
 		}

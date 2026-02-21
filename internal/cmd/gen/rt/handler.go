@@ -52,6 +52,9 @@ func GenRouter(cmdName string) {
 	if rg.projectName, err = service.GetProjectName(); err != nil {
 		utils.OutputFatal("Failed to get project name:", err)
 	}
+	if rg.projectRoot, err = service.GetProjectRoot(); err != nil {
+		utils.OutputFatal("Failed to get project root:", err)
+	}
 	rootPath, err := service.GetAbsPath(fmt.Sprintf("internal/%s/transport/http/api", cmdName))
 	if err != nil {
 		utils.OutputFatal("Failed to get absolute rootPath:", err)

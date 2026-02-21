@@ -1,6 +1,8 @@
 package mdw
 
 import (
+	"strings"
+
 	"github.com/jiajia556/godo/internal/service"
 	"github.com/jiajia556/godo/internal/template"
 	"github.com/jiajia556/godo/internal/utils"
@@ -14,8 +16,9 @@ func genMiddleware(middlewares []string) {
 	}
 	for _, middleware := range middlewares {
 		middlewareName := utils.CapitalizeFirstLetter(middleware)
+		fileName := strings.ToLower(middlewareName)
 
-		filePath := "internal/common/transport/http/middleware/" + middlewareName + ".go"
+		filePath := "internal/common/transport/http/middleware/" + fileName + ".go"
 		filePath, err = service.GetAbsPath(filePath)
 		if err != nil {
 			utils.OutputFatal(err)

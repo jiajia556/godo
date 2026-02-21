@@ -28,5 +28,5 @@ func init() {
 		build.GetCommand(),
 	)
 
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output")
+	//rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output")
 }
