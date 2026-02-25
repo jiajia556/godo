@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type fieldInfo struct {
@@ -231,32 +233,80 @@ func parseField(def string) (fieldInfo, error) {
 
 func mapTypeAndTags(sqlType string) (string, map[string]string) {
 	tags := make(map[string]string)
-	baseType := regexp.MustCompile(`^(\w+)(?:\(.*?\))?`).FindString(sqlType)
-	baseType = strings.ToLower(baseType)
-	unsigned := strings.Contains(sqlType, "unsigned")
+
+	s := strings.ToLower(strings.TrimSpace(sqlType))
+	m := regexp.MustCompile(`^(\w+)`).FindStringSubmatch(s)
+	baseType := ""
+	if len(m) > 1 {
+		baseType = m[1]
+	}
+	unsigned := strings.Contains(s, "unsigned")
 
 	var goType string
-	switch {
-	case strings.HasPrefix(baseType, "tinyint"):
+	switch baseType {
+	case "tinyint":
+		// Commonly used as bool(1) in MySQL.
+		//if strings.HasPrefix(s, "tinyint(1)") {
+		//	goType = "bool"
+		//	break
+		//}
 		if unsigned {
 			goType = "uint8"
 		} else {
 			goType = "int8"
 		}
-	case strings.HasPrefix(baseType, "int") || strings.HasPrefix(baseType, "bigint"):
+	case "smallint":
+		if unsigned {
+			goType = "uint16"
+		} else {
+			goType = "int16"
+		}
+	case "mediumint":
+		// No native 24-bit int in Go; use int32/uint32.
+		if unsigned {
+			goType = "uint32"
+		} else {
+			goType = "int32"
+		}
+	case "int", "integer":
+		if unsigned {
+			goType = "uint32"
+		} else {
+			goType = "int32"
+		}
+	case "bigint":
 		if unsigned {
 			goType = "uint64"
 		} else {
 			goType = "int64"
 		}
-	case strings.HasPrefix(baseType, "decimal"):
+	case "bit":
+		goType = "[]byte"
+	case "float":
+		goType = "float32"
+	case "double", "real":
+		goType = "float64"
+	case "decimal", "numeric":
 		goType = "decimal.Decimal"
-	case strings.Contains(baseType, "datetime") || strings.Contains(baseType, "timestamp"):
-		goType = "mytime.DateTime"
-	case strings.HasPrefix(baseType, "varchar"), strings.HasPrefix(baseType, "text"):
+
+	case "date", "datetime", "timestamp", "time", "year":
+		goType = "time.Time"
+
+	case "char", "varchar", "tinytext", "text", "mediumtext", "longtext":
 		goType = "string"
-	case strings.HasPrefix(baseType, "boolean"):
+	case "enum", "set":
+		// Keep as string; application can define strong types if needed.
+		goType = "string"
+	case "json":
+		// Most projects store json as string/[]byte; choose []byte to avoid encoding assumptions.
+		goType = "[]byte"
+
+	case "binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob":
+		goType = "[]byte"
+
+	case "bool", "boolean":
 		goType = "bool"
+
 	default:
 		goType = "string"
 	}
@@ -276,16 +326,23 @@ func buildGormTags(fieldName string, tags map[string]string) string {
 	return strings.Join(parts, ";")
 }
 
-func isSpecialType(t string) bool {
-	return strings.Contains(t, ".") || t == "string"
-}
-
 func toCamelCase(s string) string {
 	parts := strings.Split(s, "_")
 	for i := range parts {
-		parts[i] = strings.Title(parts[i])
+		parts[i] = capitalize(parts[i])
 	}
 	return strings.Join(parts, "")
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError && size == 1 {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 func toSnakeCase(s string) string {
