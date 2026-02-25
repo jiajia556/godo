@@ -211,6 +211,10 @@ func generateModelFile(modelPkg, structName, structText, templateContent, fileNa
 }
 
 func runPostGenerationTasks() {
-	utils.RunCommand("goimports", "-w", ".")
+	modelsPath, err := service.GetAbsPath("internal/common/models")
+	if err != nil {
+		utils.OutputFatal(fmt.Sprintf("Error getting models path: %v", err))
+	}
+	utils.RunCommand("goimports", "-w", modelsPath)
 	utils.RunCommand("go", "mod", "tidy")
 }

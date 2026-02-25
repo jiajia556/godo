@@ -14,7 +14,7 @@ type CommandRunner struct {
 
 func NewCommandRunner() *CommandRunner {
 	return &CommandRunner{
-		Verbose: os.Getenv("GOD_VERBOSE") == "0",
+		Verbose: false,
 	}
 }
 
