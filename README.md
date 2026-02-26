@@ -246,7 +246,7 @@ godo build default-api --goos linux --goarch amd64
 
 ## Command Cheatsheet
 
-> Based on the current implementation (Cobra CLI). Global flag: `-v/--verbose`.
+> Based on the current implementation (Cobra CLI). 
 
 ```text
 godo

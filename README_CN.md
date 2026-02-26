@@ -246,7 +246,7 @@ godo build default-api --goos linux --goarch amd64
 
 ## 命令速查
 
-> 以当前实现为准（Cobra CLI）。全局支持：`-v/--verbose`。
+> 以当前实现为准（Cobra CLI）。
 
 ```text
 godo
