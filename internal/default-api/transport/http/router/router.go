@@ -11,8 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-{{.MiddlewareImportPath}}
-{{.ControllersImportPath}}
+
+
 )
 
 const (
@@ -27,10 +27,10 @@ const (
 var (
 	controllers []interface{}
 	MethodTags  = map[string]string{
-{{.HTTPMethodTags}}
+
 	}
 	Middlewares = map[string][]gin.HandlerFunc{
-{{.MiddlewareTags}}
+
 	}
 )
 
@@ -40,7 +40,7 @@ func RegisterController(controller interface{}) {
 }
 
 func init() {
-{{.RegisterControllers}}
+
 }
 
 // Register registers routes for all controllers

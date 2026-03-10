@@ -1,0 +1,17 @@
+package {{.ModelPkg}}
+
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
+
+{{.ModelStruct}}
+
+func (data {{.ModelStructName}}) ID() uint64 {
+	return data.Id
+}
+
+func (data *{{.ModelStructName}}) TableName() string {
+	return "{{.TableName}}"
+}

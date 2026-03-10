@@ -39,9 +39,13 @@ func genModel(from string) {
 	if err != nil {
 		utils.OutputFatal(fmt.Sprintf("Error reading list template: %v", err))
 	}
+	modelCOntent, err := templates.TemplateFS.ReadFile("default/internal/common/models/model.go.templ")
+	if err != nil {
+		utils.OutputFatal(fmt.Sprintf("Error reading model template: %v", err))
+	}
 
 	for _, createTable := range createTables {
-		generateModelFromSQL(createTable, string(recordContent), string(listContent))
+		generateModelFromSQL(createTable, string(recordContent), string(listContent), string(modelCOntent))
 	}
 }
 
@@ -152,9 +156,9 @@ func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
 	return createTables, nil
 }
 
-func generateModelFromSQL(sql, recordTmpl, listTmpl string) {
+func generateModelFromSQL(sql, recordTmpl, listTmpl, modelTmpl string) {
 	// Generate model structure from SQL
-	structText, structName, err := GenerateModelStruct(sql)
+	structText, structName, tableName, err := GenerateModelStruct(sql)
 	if err != nil {
 		utils.OutputFatal(fmt.Sprintf("Error generating model struct: %v", err))
 		return
@@ -164,13 +168,16 @@ func generateModelFromSQL(sql, recordTmpl, listTmpl string) {
 	modelPkg := strings.ToLower(structName)
 
 	// Generate record file
-	generateModelFile(modelPkg, structName, structText, recordTmpl, "record.go")
+	generateModelFile(modelPkg, tableName, structName, structText, recordTmpl, "record.go")
 
 	// Generate list file
-	generateModelFile(modelPkg, structName, structText, listTmpl, "list.go")
+	generateModelFile(modelPkg, tableName, structName, structText, listTmpl, "list.go")
+
+	// Generate model file
+	generateModelFile(modelPkg, tableName, structName, structText, modelTmpl, "model.go")
 }
 
-func generateModelFile(modelPkg, structName, structText, templateContent, fileName string) {
+func generateModelFile(modelPkg, tableName, structName, structText, templateContent, fileName string) {
 	// Set up file paths
 	var err error
 	path := filepath.Join("internal/common/models", modelPkg, fileName)
@@ -195,6 +202,7 @@ func generateModelFile(modelPkg, structName, structText, templateContent, fileNa
 		ProjectName:     projectName,
 		ModelStruct:     structText,
 		ModelStructName: structName,
+		TableName:       tableName,
 	}
 
 	// Create directory structure
