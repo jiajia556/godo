@@ -55,7 +55,12 @@ func autoRegisterRoutes(router *gin.Engine, controller interface{}) {
 	controllerType := reflect.TypeOf(controller)
 	controllerValue := reflect.ValueOf(controller)
 
-	baseRoute, pkgPath := buildBaseRoute(controllerType)
+	controllerElemType := controllerType
+	if controllerElemType != nil && controllerElemType.Kind() == reflect.Ptr {
+		controllerElemType = controllerElemType.Elem()
+	}
+
+	baseRoute, pkgPath := buildBaseRoute(controllerElemType)
 
 	for i := 0; i < controllerType.NumMethod(); i++ {
 		method := controllerType.Method(i)
@@ -63,18 +68,22 @@ func autoRegisterRoutes(router *gin.Engine, controller interface{}) {
 			continue
 		}
 
-		registerMethodRoute(router, controllerValue, method, baseRoute, pkgPath)
+		registerMethodRoute(router, controllerValue, controllerElemType, method, baseRoute, pkgPath)
 	}
 }
 
 // registerMethodRoute registers route for a single method
 func registerMethodRoute(router *gin.Engine, controllerValue reflect.Value,
-	method reflect.Method, baseRoute, pkgPath string) {
+	controllerElemType reflect.Type, method reflect.Method, baseRoute, pkgPath string) {
 
 	methodName := formatControllerMethodName(method.Name)
 	routePath := fmt.Sprintf("api/%s/%s", baseRoute, methodName)
 
-	methodKey := fmt.Sprintf("%s.%s.%s", pkgPath, controllerValue.Type().Name(), method.Name)
+	controllerName := ""
+	if controllerElemType != nil {
+		controllerName = controllerElemType.Name()
+	}
+	methodKey := fmt.Sprintf("%s.%s.%s", pkgPath, controllerName, method.Name)
 	httpMethod := getHTTPMethod(methodKey)
 	handlers := buildHandlersChain(controllerValue, method, methodKey)
 
@@ -113,6 +122,9 @@ func registerHTTPMethods(router *gin.Engine, httpMethod string, path string, han
 
 // buildBaseRoute builds base route path
 func buildBaseRoute(controllerType reflect.Type) (string, string) {
+	if controllerType == nil {
+		return "", ""
+	}
 	pkgPath := controllerType.PkgPath()
 	parts := strings.Split(pkgPath, "/")
 

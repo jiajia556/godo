@@ -1,0 +1,13 @@
+package {{.ModelPkg}}
+
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
+
+{{.ModelStruct}}
+
+func (u {{.ModelStructName}}) ID() uint64 {
+	return u.Id
+}

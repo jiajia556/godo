@@ -55,46 +55,105 @@ func GetDB() *gorm.DB {
 }
 
 func NewTxContext() *TxContext {
-	return &TxContext{GetDB(), 0}
+	return &TxContext{base: GetDB()}
 }
 
 type TxContext struct {
-	tx     *gorm.DB
-	status int8
+	base *gorm.DB
+	tx   *gorm.DB
 }
 
+// Begin 开启一个事务；如果已经在事务中会返回错误。
 func (m *TxContext) Begin() error {
-	tx := GetDB().Begin()
+	if m == nil {
+		return errors.New("nil TxContext")
+	}
+	if m.base == nil {
+		m.base = GetDB()
+	}
+	if m.tx != nil {
+		return errors.New("transaction already started")
+	}
+	tx := m.base.Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
 	m.tx = tx
-	m.status = 1
 	return nil
 }
 
+// Commit 提交事务；仅当处于事务中时可调用。
 func (m *TxContext) Commit() error {
+	if m == nil {
+		return errors.New("nil TxContext")
+	}
 	if m.tx == nil {
 		return errors.New("no active transaction")
 	}
-	if m.status != 1 {
-		return errors.New("not in transaction")
-	}
-	m.status = 0
-	return m.tx.Commit().Error
+	err := m.tx.Commit().Error
+	m.tx = nil
+	return err
 }
 
+// Rollback 回滚事务；仅当处于事务中时可调用。
 func (m *TxContext) Rollback() error {
+	if m == nil {
+		return errors.New("nil TxContext")
+	}
 	if m.tx == nil {
 		return errors.New("no active transaction")
 	}
-	if m.status != 1 {
-		return errors.New("not in transaction")
-	}
-	m.status = 0
-	return m.tx.Rollback().Error
+	err := m.tx.Rollback().Error
+	m.tx = nil
+	return err
 }
 
+// InTx 会在一个事务作用域内运行 fn。
+// - fn 返回 error => 回滚并返回该 error（回滚失败会 wrap）
+// - fn panic => 回滚后继续 panic（避免吞掉错误）
+// - fn 正常返回 nil => 提交
+func (m *TxContext) InTx(fn func(tx *gorm.DB) error) (err error) {
+	if m == nil {
+		return errors.New("nil TxContext")
+	}
+	if fn == nil {
+		return errors.New("nil tx function")
+	}
+	if m.tx != nil {
+		return errors.New("already in transaction")
+	}
+	if err = m.Begin(); err != nil {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			_ = m.Rollback()
+			panic(r)
+		}
+		if err != nil {
+			if rbErr := m.Rollback(); rbErr != nil {
+				err = fmt.Errorf("%w; rollback error: %v", err, rbErr)
+			}
+			return
+		}
+		err = m.Commit()
+	}()
+
+	return fn(m.tx)
+}
+
+// DB 返回当前应使用的 *gorm.DB：
+// - 已开启事务：返回事务句柄
+// - 未开启事务：返回基础连接
 func (m *TxContext) DB() *gorm.DB {
-	return m.tx
+	if m == nil {
+		return GetDB()
+	}
+	if m.tx != nil {
+		return m.tx
+	}
+	if m.base != nil {
+		return m.base
+	}
+	return GetDB()
 }

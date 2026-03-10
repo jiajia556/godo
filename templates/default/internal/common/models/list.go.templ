@@ -16,6 +16,7 @@ func NewList(ctx *mysql.TxContext) *List {
 	l := &List{
 		BaseList: &models.BaseList[{{.ModelStructName}}, Record]{
 			TxContext: ctx,
+            Records:   make([]{{.ModelStructName}}, 0),
 		},
 	}
 

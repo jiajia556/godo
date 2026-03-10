@@ -1,19 +1,9 @@
 package {{.ModelPkg}}
 
 import (
-    "time"
-
-    "github.com/shopspring/decimal"
-
 	"{{.ProjectName}}/internal/common/database/mysql"
 	"{{.ProjectName}}/internal/common/models"
 )
-
-{{.ModelStruct}}
-
-func (u {{.ModelStructName}}) ID() uint64 {
-	return u.Id
-}
 
 type Record struct {
 	*models.BaseRecord[{{.ModelStructName}}]

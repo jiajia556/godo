@@ -39,9 +39,13 @@ func genModel(from string) {
 	if err != nil {
 		utils.OutputFatal(fmt.Sprintf("Error reading list template: %v", err))
 	}
+	modelCOntent, err := templates.TemplateFS.ReadFile("default/internal/common/models/model.go.templ")
+	if err != nil {
+		utils.OutputFatal(fmt.Sprintf("Error reading model template: %v", err))
+	}
 
 	for _, createTable := range createTables {
-		generateModelFromSQL(createTable, string(recordContent), string(listContent))
+		generateModelFromSQL(createTable, string(recordContent), string(listContent), string(modelCOntent))
 	}
 }
 
@@ -152,7 +156,7 @@ func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
 	return createTables, nil
 }
 
-func generateModelFromSQL(sql, recordTmpl, listTmpl string) {
+func generateModelFromSQL(sql, recordTmpl, listTmpl, modelTmpl string) {
 	// Generate model structure from SQL
 	structText, structName, err := GenerateModelStruct(sql)
 	if err != nil {
@@ -168,6 +172,9 @@ func generateModelFromSQL(sql, recordTmpl, listTmpl string) {
 
 	// Generate list file
 	generateModelFile(modelPkg, structName, structText, listTmpl, "list.go")
+
+	// Generate model file
+	generateModelFile(modelPkg, structName, structText, modelTmpl, "model.go")
 }
 
 func generateModelFile(modelPkg, structName, structText, templateContent, fileName string) {
