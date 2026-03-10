@@ -35,6 +35,7 @@ type ModelData struct {
 	ProjectName     string
 	ModelStruct     string
 	ModelStructName string
+	TableName       string
 }
 
 type TemplateWriter struct {

@@ -8,6 +8,10 @@ import (
 
 {{.ModelStruct}}
 
-func (u {{.ModelStructName}}) ID() uint64 {
-	return u.Id
+func (data {{.ModelStructName}}) ID() uint64 {
+	return data.Id
+}
+
+func (data *{{.ModelStructName}}) TableName() string {
+	return "{{.TableName}}"
 }

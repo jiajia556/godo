@@ -158,7 +158,7 @@ func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
 
 func generateModelFromSQL(sql, recordTmpl, listTmpl, modelTmpl string) {
 	// Generate model structure from SQL
-	structText, structName, err := GenerateModelStruct(sql)
+	structText, structName, tableName, err := GenerateModelStruct(sql)
 	if err != nil {
 		utils.OutputFatal(fmt.Sprintf("Error generating model struct: %v", err))
 		return
@@ -168,16 +168,16 @@ func generateModelFromSQL(sql, recordTmpl, listTmpl, modelTmpl string) {
 	modelPkg := strings.ToLower(structName)
 
 	// Generate record file
-	generateModelFile(modelPkg, structName, structText, recordTmpl, "record.go")
+	generateModelFile(modelPkg, tableName, structName, structText, recordTmpl, "record.go")
 
 	// Generate list file
-	generateModelFile(modelPkg, structName, structText, listTmpl, "list.go")
+	generateModelFile(modelPkg, tableName, structName, structText, listTmpl, "list.go")
 
 	// Generate model file
-	generateModelFile(modelPkg, structName, structText, modelTmpl, "model.go")
+	generateModelFile(modelPkg, tableName, structName, structText, modelTmpl, "model.go")
 }
 
-func generateModelFile(modelPkg, structName, structText, templateContent, fileName string) {
+func generateModelFile(modelPkg, tableName, structName, structText, templateContent, fileName string) {
 	// Set up file paths
 	var err error
 	path := filepath.Join("internal/common/models", modelPkg, fileName)
@@ -202,6 +202,7 @@ func generateModelFile(modelPkg, structName, structText, templateContent, fileNa
 		ProjectName:     projectName,
 		ModelStruct:     structText,
 		ModelStructName: structName,
+		TableName:       tableName,
 	}
 
 	// Create directory structure

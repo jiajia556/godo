@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/jiajia556/godo/internal/utils"
 )
 
 type fieldInfo struct {
@@ -16,13 +18,13 @@ type fieldInfo struct {
 }
 
 // GenerateStruct generates Go struct definition from SQL create table statement
-func GenerateModelStruct(sql string) (string, string, error) {
+func GenerateModelStruct(sql string) (string, string, string, error) {
 	tableName, fields, err := parseSQL(sql)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	return buildStruct(tableName, fields), toCamelCase(tableName), nil
+	return buildStruct(tableName, fields), toCamelCase(tableName), utils.LowercaseFirstLetter(tableName), nil
 }
 
 func parseSQL(sql string) (string, []fieldInfo, error) {
