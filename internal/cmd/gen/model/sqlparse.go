@@ -188,6 +188,10 @@ func parseField(def string) (fieldInfo, error) {
 
 	// Preserve the original type mapping.
 	goType, tags := mapTypeAndTags(typeInfo)
+	if fieldName == "id" {
+		// Special case for "id" field: use uint64 and primary key tag by default.
+		goType = "uint64"
+	}
 
 	// Conservative enhancement: detect common constraints and add gorm tags.
 	// (Do not change the Go type mapping.)
