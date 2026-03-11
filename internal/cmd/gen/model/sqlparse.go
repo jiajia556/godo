@@ -24,7 +24,7 @@ func GenerateModelStruct(sql string) (string, string, string, error) {
 		return "", "", "", err
 	}
 
-	return buildStruct(tableName, fields), toCamelCase(tableName), utils.LowercaseFirstLetter(tableName), nil
+	return buildStruct(tableName, fields), toCamelCase(tableName), utils.CamelToSnake(tableName), nil
 }
 
 func parseSQL(sql string) (string, []fieldInfo, error) {

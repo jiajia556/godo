@@ -19,3 +19,15 @@ func LowercaseFirstLetter(s string) string {
 
 	return strings.ToLower(string(s[0])) + s[1:]
 }
+
+func CamelToSnake(s string) string {
+	var result []rune
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			result = append(result, '_')
+		}
+		result = append(result, r)
+	}
+
+	return strings.ToLower(string(result))
+}
