@@ -9,13 +9,13 @@ type List struct {
 	*models.BaseList[{{.ModelStructName}}, Record]
 }
 
-func NewList(ctx *mysql.TxContext) *List {
-	if ctx == nil {
-		ctx = mysql.NewTxContext()
+func NewList(ctx ...models.DBContext) *List {
+	if len(ctx) == 0 || ctx[0] == nil {
+		ctx[0] = mysql.NewTxContext()
 	}
 	l := &List{
 		BaseList: &models.BaseList[{{.ModelStructName}}, Record]{
-			TxContext: ctx,
+			TxContext: ctx[0],
             Records:   make([]{{.ModelStructName}}, 0),
 		},
 	}

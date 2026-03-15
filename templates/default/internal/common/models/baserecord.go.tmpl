@@ -1,12 +1,7 @@
 package models
 
-import "{{.ProjectName}}/internal/common/database/mysql"
-
-type DBData interface {
-	ID() uint64
-}
 type BaseRecord[T DBData] struct {
-	*mysql.TxContext
+	DBContext
 	Data T
 }
 
@@ -31,8 +26,8 @@ func (m *BaseRecord[T]) Delete() error {
 	return m.DB().Delete(&m.Data).Error
 }
 
-func (m *BaseRecord[T]) SetCtx(ctx *mysql.TxContext) {
-	m.TxContext = ctx
+func (m *BaseRecord[T]) SetCtx(ctx DBContext) {
+	m.DBContext = ctx
 }
 
 func (m *BaseRecord[T]) SetData(data DBData) {

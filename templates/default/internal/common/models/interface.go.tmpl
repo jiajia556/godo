@@ -1,0 +1,18 @@
+package models
+
+import (
+	"gorm.io/gorm"
+)
+
+type DBRecord interface {
+	SetCtx(ctx DBContext)
+	SetData(data DBData)
+}
+
+type DBData interface {
+	ID() uint64
+}
+
+type DBContext interface {
+	DB() *gorm.DB
+}
