@@ -15,7 +15,7 @@ func NewList(ctx ...models.DBContext) *List {
 	}
 	l := &List{
 		BaseList: &models.BaseList[{{.ModelStructName}}, Record]{
-			TxContext: ctx[0],
+			DBContext: ctx[0],
             Records:   make([]{{.ModelStructName}}, 0),
 		},
 	}

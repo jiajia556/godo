@@ -15,7 +15,7 @@ func NewRecord(ctx ...models.DBContext) *Record {
 	}
 	r := &Record{
 		BaseRecord: &models.BaseRecord[{{.ModelStructName}}]{
-			TxContext: ctx[0],
+			DBContext: ctx[0],
 			Data:      {{.ModelStructName}}{},
 		},
 	}
