@@ -36,6 +36,7 @@ type ModelData struct {
 	ModelStruct     string
 	ModelStructName string
 	TableName       string
+	CreateDDL       string
 }
 
 type TemplateWriter struct {

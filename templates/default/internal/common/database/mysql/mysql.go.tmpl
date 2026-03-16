@@ -3,27 +3,38 @@ package mysql
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
+
+	"{{.ProjectName}}/pkg/syncmap"
 )
 
 type MysqlConfig struct {
-	Host     string          `json:"host" yaml:"host"`
-	User     string          `json:"user" yaml:"user"`
-	Password string          `json:"password" yaml:"password"`
-	DBName   string          `json:"db_name" yaml:"db_name"`
-	Port     int             `json:"port" yaml:"port"`
-	Prefix   string          `json:"prefix" yaml:"prefix"`
-	Charset  string          `json:"charset" yaml:"charset"`
-	LogLevel logger.LogLevel `json:"log_level" yaml:"log_level"`
+	Host            string          `json:"host" yaml:"host"`
+	User            string          `json:"user" yaml:"user"`
+	Password        string          `json:"password" yaml:"password"`
+	DBName          string          `json:"db_name" yaml:"db_name"`
+	Port            int             `json:"port" yaml:"port"`
+	Prefix          string          `json:"prefix" yaml:"prefix"`
+	Charset         string          `json:"charset" yaml:"charset"`
+	LogLevel        logger.LogLevel `json:"log_level" yaml:"log_level"`
+	AutoCreateTable bool            `json:"auto_create_table" yaml:"auto_create_table"`
+}
+
+type tableState struct {
+	mu   sync.Mutex
+	done bool
 }
 
 // SqlDB .
 var (
-	sqlDB *gorm.DB
+	sqlDB           *gorm.DB
+	autoCreateTable bool
+	tableStates     syncmap.SyncMap[string, *tableState]
 )
 
 // InitMysql .
@@ -43,15 +54,20 @@ func InitMysql(conf MysqlConfig) error {
 	if err != nil {
 		return err
 	}
+	autoCreateTable = conf.AutoCreateTable
 	return nil
 }
 
-// GetDB .
+// GetDB returns the global *gorm.DB instance; it panics if MySQL hasn't been initialized.
 func GetDB() *gorm.DB {
 	if sqlDB == nil {
 		panic("mysql not init")
 	}
 	return sqlDB
+}
+
+func AutoCreateTable() bool {
+	return autoCreateTable
 }
 
 func NewTxContext() *TxContext {
@@ -63,7 +79,7 @@ type TxContext struct {
 	tx   *gorm.DB
 }
 
-// Begin 开启一个事务；如果已经在事务中会返回错误。
+// Begin starts a transaction; returns an error if a transaction is already active.
 func (m *TxContext) Begin() error {
 	if m == nil {
 		return errors.New("nil TxContext")
@@ -82,7 +98,7 @@ func (m *TxContext) Begin() error {
 	return nil
 }
 
-// Commit 提交事务；仅当处于事务中时可调用。
+// Commit commits the transaction; it can only be called when a transaction is active.
 func (m *TxContext) Commit() error {
 	if m == nil {
 		return errors.New("nil TxContext")
@@ -95,7 +111,7 @@ func (m *TxContext) Commit() error {
 	return err
 }
 
-// Rollback 回滚事务；仅当处于事务中时可调用。
+// Rollback rolls back the transaction; it can only be called when a transaction is active.
 func (m *TxContext) Rollback() error {
 	if m == nil {
 		return errors.New("nil TxContext")
@@ -108,10 +124,10 @@ func (m *TxContext) Rollback() error {
 	return err
 }
 
-// InTx 会在一个事务作用域内运行 fn。
-// - fn 返回 error => 回滚并返回该 error（回滚失败会 wrap）
-// - fn panic => 回滚后继续 panic（避免吞掉错误）
-// - fn 正常返回 nil => 提交
+// InTx runs fn within a transaction scope.
+// - fn returns error: rollback and return that error (wrap if rollback fails)
+// - fn panics: rollback and re-panic (don't swallow the failure)
+// - fn returns nil: commit
 func (m *TxContext) InTx(fn func(tx *gorm.DB) error) (err error) {
 	if m == nil {
 		return errors.New("nil TxContext")
@@ -142,9 +158,9 @@ func (m *TxContext) InTx(fn func(tx *gorm.DB) error) (err error) {
 	return fn(m.tx)
 }
 
-// DB 返回当前应使用的 *gorm.DB：
-// - 已开启事务：返回事务句柄
-// - 未开启事务：返回基础连接
+// DB returns the *gorm.DB that should be used currently:
+// - if a transaction is active: return the transactional handle
+// - otherwise: return the base connection
 func (m *TxContext) DB() *gorm.DB {
 	if m == nil {
 		return GetDB()
@@ -156,4 +172,35 @@ func (m *TxContext) DB() *gorm.DB {
 		return m.base
 	}
 	return GetDB()
+}
+
+func (m *TxContext) CreateTableIfNotExists(table DBData) error {
+	db := m.DB()
+
+	tableName := table.TableName()
+
+	state, _ := tableStates.LoadOrStore(tableName, &tableState{})
+
+	if state.done {
+		return nil
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	// double check
+	if state.done {
+		return nil
+	}
+
+	migrator := db.Migrator()
+
+	if !migrator.HasTable(table) {
+		if err := db.Exec(table.GetCreateDDL()).Error; err != nil {
+			return err
+		}
+	}
+
+	state.done = true
+	return nil
 }

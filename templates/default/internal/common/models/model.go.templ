@@ -8,10 +8,14 @@ import (
 
 {{.ModelStruct}}
 
-func (data {{.ModelStructName}}) ID() uint64 {
+func (data *{{.ModelStructName}}) ID() uint64 {
 	return data.Id
 }
 
 func (data *{{.ModelStructName}}) TableName() string {
 	return "{{.TableName}}"
+}
+
+func (data *{{.ModelStructName}}) GetCreateDDL() string {
+    return "{{.CreateDDL}}"
 }

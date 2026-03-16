@@ -1,7 +1,9 @@
 package models
 
-type BaseList[T DBData, R DBRecord] struct {
-	DBContext
+import "{{.ProjectName}}/internal/common/database/mysql"
+
+type BaseList[T mysql.DBData, R DBRecord] struct {
+	mysql.DBContext
 	Records []T
 	total   int64
 }

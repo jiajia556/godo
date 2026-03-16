@@ -168,16 +168,16 @@ func generateModelFromSQL(sql, recordTmpl, listTmpl, modelTmpl string) {
 	modelPkg := strings.ToLower(structName)
 
 	// Generate record file
-	generateModelFile(modelPkg, tableName, structName, structText, recordTmpl, "record.go")
+	generateModelFile(modelPkg, tableName, structName, structText, sql, recordTmpl, "record.go")
 
 	// Generate list file
-	generateModelFile(modelPkg, tableName, structName, structText, listTmpl, "list.go")
+	generateModelFile(modelPkg, tableName, structName, structText, sql, listTmpl, "list.go")
 
 	// Generate model file
-	generateModelFile(modelPkg, tableName, structName, structText, modelTmpl, "model.go")
+	generateModelFile(modelPkg, tableName, structName, structText, sql, modelTmpl, "model.go")
 }
 
-func generateModelFile(modelPkg, tableName, structName, structText, templateContent, fileName string) {
+func generateModelFile(modelPkg, tableName, structName, structText, createDDL, templateContent, fileName string) {
 	// Set up file paths
 	var err error
 	path := filepath.Join("internal/common/models", modelPkg, fileName)
@@ -197,12 +197,16 @@ func generateModelFile(modelPkg, tableName, structName, structText, templateCont
 		utils.OutputFatal(fmt.Sprintf("Error getting project name: %v", err))
 	}
 
+	createDDL = strings.ReplaceAll(createDDL, "\r\n", " ")
+	createDDL = strings.ReplaceAll(createDDL, "\n", " ")
+
 	data := template.ModelData{
 		ModelPkg:        modelPkg,
 		ProjectName:     projectName,
 		ModelStruct:     structText,
 		ModelStructName: structName,
 		TableName:       tableName,
+		CreateDDL:       createDDL,
 	}
 
 	// Create directory structure

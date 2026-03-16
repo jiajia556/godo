@@ -6,17 +6,24 @@ import (
 )
 
 type Record struct {
-	*models.BaseRecord[{{.ModelStructName}}]
+	*models.BaseRecord[*{{.ModelStructName}}]
 }
 
-func NewRecord(ctx ...models.DBContext) *Record {
+func NewRecord(ctx ...mysql.DBContext) *Record {
 	if len(ctx) == 0 || ctx[0] == nil {
+	    ctx = make([]mysql.DBContext, 1)
 		ctx[0] = mysql.NewTxContext()
 	}
+	if mysql.AutoCreateTable() {
+        err := ctx[0].CreateTableIfNotExists(new({{.ModelStructName}}))
+        if err != nil {
+            panic(err)
+        }
+    }
 	r := &Record{
-		BaseRecord: &models.BaseRecord[{{.ModelStructName}}]{
+		BaseRecord: &models.BaseRecord[*{{.ModelStructName}}]{
 			DBContext: ctx[0],
-			Data:      {{.ModelStructName}}{},
+			Data:      new({{.ModelStructName}}),
 		},
 	}
 	return r

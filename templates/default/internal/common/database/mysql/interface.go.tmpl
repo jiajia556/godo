@@ -1,18 +1,16 @@
-package models
+package mysql
 
 import (
 	"gorm.io/gorm"
 )
 
-type DBRecord interface {
-	SetCtx(ctx DBContext)
-	SetData(data DBData)
-}
-
 type DBData interface {
 	ID() uint64
+	GetCreateDDL() string
+	TableName() string
 }
 
 type DBContext interface {
 	DB() *gorm.DB
+	CreateTableIfNotExists(table DBData) error
 }

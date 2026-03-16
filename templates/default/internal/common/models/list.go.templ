@@ -6,17 +6,24 @@ import (
 )
 
 type List struct {
-	*models.BaseList[{{.ModelStructName}}, Record]
+	*models.BaseList[*{{.ModelStructName}}, Record]
 }
 
-func NewList(ctx ...models.DBContext) *List {
+func NewList(ctx ...mysql.DBContext) *List {
 	if len(ctx) == 0 || ctx[0] == nil {
+	    ctx = make([]mysql.DBContext, 1)
 		ctx[0] = mysql.NewTxContext()
 	}
+	if mysql.AutoCreateTable() {
+        err := ctx[0].CreateTableIfNotExists(new({{.ModelStructName}}))
+        if err != nil {
+            panic(err)
+        }
+    }
 	l := &List{
-		BaseList: &models.BaseList[{{.ModelStructName}}, Record]{
+		BaseList: &models.BaseList[*{{.ModelStructName}}, Record]{
 			DBContext: ctx[0],
-            Records:   make([]{{.ModelStructName}}, 0),
+            Records:   make([]*{{.ModelStructName}}, 0),
 		},
 	}
 
