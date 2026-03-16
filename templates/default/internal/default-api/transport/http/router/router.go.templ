@@ -10,7 +10,7 @@ import (
 	"unicode"
 
 	"github.com/gin-gonic/gin"
-
+    "{{.ProjectName}}/internal/common/transport/http/output"
 {{.MiddlewareImportPath}}
 {{.ControllersImportPath}}
 )
@@ -103,7 +103,45 @@ func buildHandlersChain(controllerValue reflect.Value, method reflect.Method, ke
 // createGinHandler creates Gin handler function
 func createGinHandler(controllerValue reflect.Value, method reflect.Method) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		method.Func.Call([]reflect.Value{controllerValue, reflect.ValueOf(ctx)})
+		args := make([]reflect.Value, 0, method.Type.NumIn())
+		args = append(args, controllerValue)      // receiver
+		args = append(args, reflect.ValueOf(ctx)) // *gin.Context
+
+		if method.Type.NumIn() > 2 && method.Type.In(2).Kind() == reflect.Ptr {
+			paramType := method.Type.In(2)          // e.g. *Req
+			paramValue := reflect.New(paramType.Elem())
+
+			if err := ctx.ShouldBind(paramValue.Interface()); err != nil {
+				output.NewOutput(ctx, 1).SetMsg("invalid request: " + err.Error()).Out()
+				return
+			}
+
+			args = append(args, paramValue)
+		}
+
+		outs := method.Func.Call(args)
+
+		if len(outs) == 0 {
+			return
+		}
+
+		if len(outs) == 1 && isIntegerKind(outs[0].Kind()) {
+			code := int(outs[0].Convert(reflect.TypeOf(int(0))).Int())
+			output.NewOutput(ctx, output.ErrorCode(code)).Out()
+			return
+		}
+
+		if len(outs) == 1 {
+			v := outs[0].Interface()
+			output.NewOutput(ctx, 0).SetData(v).Out()
+			return
+		}
+
+		if len(outs) == 2 && isIntegerKind(outs[0].Kind()) {
+			code := output.ErrorCode(outs[0].Convert(reflect.TypeOf(int(0))).Int())
+			v := outs[1].Interface()
+			output.NewOutput(ctx, code).SetData(v).Out()
+		}
 	}
 }
 
@@ -195,8 +233,15 @@ func getParamTypeName(paramType reflect.Type) string {
 
 // isValidControllerMethod validates if it's a valid controller method
 func isValidControllerMethod(method reflect.Method) bool {
-	if method.Type.NumIn() != 2 {
+	return getParamTypeName(method.Type.In(1)) == contextTypeName
+}
+
+func isIntegerKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return true
+	default:
 		return false
 	}
-	return getParamTypeName(method.Type.In(1)) == contextTypeName
 }

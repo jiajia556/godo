@@ -86,12 +86,18 @@ func (rg *routeGenerator) generateTemplateData(root string) (template.RouterTmpl
 		return template.RouterTmplData{}, fmt.Errorf("project analysis failed: %w", err)
 	}
 
+	ProjectName, err := service.GetProjectName()
+	if err != nil {
+		return template.RouterTmplData{}, fmt.Errorf("failed to get project name: %w", err)
+	}
+
 	return template.RouterTmplData{
 		HTTPMethodTags:        rg.formatHTTPMethods(),
 		MiddlewareTags:        rg.formatMiddlewares(),
 		RegisterControllers:   strings.Join(rg.initRegistrations, ""),
 		MiddlewareImportPath:  rg.middlewareImport(),
 		ControllersImportPath: strings.Join(rg.imports, "\n\t"),
+		ProjectName:           ProjectName,
 	}, nil
 }
 

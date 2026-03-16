@@ -15,6 +15,7 @@ type RouterTmplData struct {
 	HTTPMethodTags        string
 	MiddlewareTags        string
 	RegisterControllers   string
+	ProjectName           string
 }
 
 type ProjectNameData struct {
