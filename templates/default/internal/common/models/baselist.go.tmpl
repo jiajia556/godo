@@ -8,9 +8,8 @@ type BaseList[T mysql.DBData, R DBRecord] struct {
 	total   int64
 }
 
-func (l *BaseList[T, R]) FindAll() *BaseList[T, R] {
-	l.DB().Find(&l.Records)
-	return l
+func (l *BaseList[T, R]) FindAll() error {
+	return l.DB().Find(&l.Records).Error
 }
 
 func (l *BaseList[T, R]) IsEmpty() bool {

@@ -23,9 +23,8 @@ func (m *BaseRecord[T]) Update() error {
 	return m.DB().Save(m.Data).Error
 }
 
-func (m *BaseRecord[T]) Read(id uint64) *BaseRecord[T] {
-	m.DB().Take(m.Data, id)
-	return m
+func (m *BaseRecord[T]) Read(id uint64) error {
+	return m.DB().Take(m.Data, id).Error
 }
 
 func (m *BaseRecord[T]) Delete() error {
