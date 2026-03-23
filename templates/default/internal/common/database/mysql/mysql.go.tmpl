@@ -23,6 +23,12 @@ type MysqlConfig struct {
 	Charset         string          `json:"charset" yaml:"charset"`
 	LogLevel        logger.LogLevel `json:"log_level" yaml:"log_level"`
 	AutoCreateTable bool            `json:"auto_create_table" yaml:"auto_create_table"`
+
+	// Optional connection pool settings; zero means "use driver default".
+	MaxOpenConns    int           `json:"max_open_conns" yaml:"max_open_conns"`
+	MaxIdleConns    int           `json:"max_idle_conns" yaml:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `json:"conn_max_lifetime" yaml:"conn_max_lifetime"`
+	ConnMaxIdleTime time.Duration `json:"conn_max_idle_time" yaml:"conn_max_idle_time"`
 }
 
 type tableState struct {
@@ -30,6 +36,7 @@ type tableState struct {
 	done bool
 }
 
+// SqlDB .
 var (
 	sqlDB           *gorm.DB
 	autoCreateTable bool
@@ -38,12 +45,22 @@ var (
 
 // InitMysql .
 func InitMysql(conf MysqlConfig) error {
-	var err error
+	dsnCfg := &mysqlDriver.Config{
+		User:      conf.User,
+		Passwd:    conf.Password,
+		Net:       "tcp",
+		Addr:      fmt.Sprintf("%s:%d", conf.Host, conf.Port),
+		DBName:    conf.DBName,
+		Loc:       time.Local,
+		ParseTime: true,
+		Params: map[string]string{
+			"charset": conf.Charset,
+		},
+	}
 
-	param := fmt.Sprintf("%s:%s@(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		conf.User, conf.Password, conf.Host, conf.Port, conf.DBName, conf.Charset)
+	var err error
 	sqlDB, err = gorm.Open(
-		mysql.Open(param), &gorm.Config{
+		mysql.Open(dsnCfg.FormatDSN()), &gorm.Config{
 			NamingStrategy: schema.NamingStrategy{
 				TablePrefix:   conf.Prefix, // table name prefix
 				SingularTable: true,        // use singular table name
@@ -53,6 +70,23 @@ func InitMysql(conf MysqlConfig) error {
 	if err != nil {
 		return err
 	}
+
+	// Configure connection pool if provided.
+	if rawDB, err := sqlDB.DB(); err == nil {
+		if conf.MaxOpenConns > 0 {
+			rawDB.SetMaxOpenConns(conf.MaxOpenConns)
+		}
+		if conf.MaxIdleConns > 0 {
+			rawDB.SetMaxIdleConns(conf.MaxIdleConns)
+		}
+		if conf.ConnMaxLifetime > 0 {
+			rawDB.SetConnMaxLifetime(conf.ConnMaxLifetime)
+		}
+		if conf.ConnMaxIdleTime > 0 {
+			rawDB.SetConnMaxIdleTime(conf.ConnMaxIdleTime)
+		}
+	}
+
 	autoCreateTable = conf.AutoCreateTable
 	return nil
 }
@@ -60,7 +94,7 @@ func InitMysql(conf MysqlConfig) error {
 // GetDB returns the global *gorm.DB instance; it panics if MySQL hasn't been initialized.
 func GetDB() *gorm.DB {
 	if sqlDB == nil {
-		panic("mysql not init")
+		panic("MySQL not initialized")
 	}
 	return sqlDB
 }
@@ -162,15 +196,15 @@ func (m *TxContext) InTx(fn func(tx *gorm.DB) error) (err error) {
 // - otherwise: return the base connection
 func (m *TxContext) DB() *gorm.DB {
 	if m == nil {
-		return GetDB()
+		panic("nil TxContext")
 	}
 	if m.tx != nil {
 		return m.tx
 	}
-	if m.base != nil {
-		return m.base
+	if m.base == nil {
+		m.base = GetDB()
 	}
-	return GetDB()
+	return m.base
 }
 
 func (m *TxContext) CreateTableIfNotExists(table DBData) error {
@@ -180,14 +214,9 @@ func (m *TxContext) CreateTableIfNotExists(table DBData) error {
 
 	state, _ := tableStates.LoadOrStore(tableName, &tableState{})
 
-	if state.done {
-		return nil
-	}
-
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
-	// double check
 	if state.done {
 		return nil
 	}

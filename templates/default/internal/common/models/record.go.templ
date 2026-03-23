@@ -10,19 +10,21 @@ type Record struct {
 }
 
 func NewRecord(ctx ...mysql.DBContext) *Record {
-	if len(ctx) == 0 || ctx[0] == nil {
-	    ctx = make([]mysql.DBContext, 1)
-		ctx[0] = mysql.NewTxContext()
-	}
+	var dbContext mysql.DBContext
+    if len(ctx) > 0 {
+        dbContext = ctx[0]
+    } else {
+        dbContext = mysql.NewTxContext()
+    }
 	if mysql.AutoCreateTable() {
-        err := ctx[0].CreateTableIfNotExists(new({{.ModelStructName}}))
+        err := dbContext.CreateTableIfNotExists(new({{.ModelStructName}}))
         if err != nil {
             panic(err)
         }
     }
 	r := &Record{
 		BaseRecord: &models.BaseRecord[*{{.ModelStructName}}]{
-			DBContext: ctx[0],
+			DBContext: dbContext,
 			Data:      new({{.ModelStructName}}),
 		},
 	}

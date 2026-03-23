@@ -10,19 +10,21 @@ type List struct {
 }
 
 func NewList(ctx ...mysql.DBContext) *List {
-	if len(ctx) == 0 || ctx[0] == nil {
-	    ctx = make([]mysql.DBContext, 1)
-		ctx[0] = mysql.NewTxContext()
-	}
+	var dbContext mysql.DBContext
+    if len(ctx) > 0 {
+        dbContext = ctx[0]
+    } else {
+        dbContext = mysql.NewTxContext()
+    }
 	if mysql.AutoCreateTable() {
-        err := ctx[0].CreateTableIfNotExists(new({{.ModelStructName}}))
+        err := dbContext.CreateTableIfNotExists(new({{.ModelStructName}}))
         if err != nil {
             panic(err)
         }
     }
 	l := &List{
 		BaseList: &models.BaseList[*{{.ModelStructName}}, Record]{
-			DBContext: ctx[0],
+			DBContext: dbContext,
             Records:   make([]*{{.ModelStructName}}, 0),
 		},
 	}

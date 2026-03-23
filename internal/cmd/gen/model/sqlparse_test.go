@@ -1,6 +1,9 @@
 package model
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func Test_mapTypeAndTags_CommonMySQLTypes(t *testing.T) {
 	tests := []struct {
@@ -37,3 +40,38 @@ func Test_mapTypeAndTags_CommonMySQLTypes(t *testing.T) {
 		})
 	}
 }
+
+func Test_GenerateModelStruct_PrimaryKey_TableConstraint(t *testing.T) {
+	sql := `CREATE TABLE user (
+		id BIGINT NOT NULL,
+		name VARCHAR(64) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+
+	got, _, _, err := GenerateModelStruct(sql)
+	if err != nil {
+		t.Fatalf("GenerateModelStruct error: %v", err)
+	}
+	if !strings.Contains(got, "primaryKey") {
+		t.Fatalf("expected generated struct to contain primaryKey tag, got:\n%s", got)
+	}
+	if !strings.Contains(got, "column:id") {
+		t.Fatalf("expected generated struct to contain id column tag, got:\n%s", got)
+	}
+}
+
+func Test_GenerateModelStruct_PrimaryKey_Inline(t *testing.T) {
+	sql := `CREATE TABLE user (
+		id BIGINT NOT NULL PRIMARY KEY,
+		name VARCHAR(64) NOT NULL
+	)`
+
+	got, _, _, err := GenerateModelStruct(sql)
+	if err != nil {
+		t.Fatalf("GenerateModelStruct error: %v", err)
+	}
+	if !strings.Contains(got, "primaryKey") {
+		t.Fatalf("expected generated struct to contain primaryKey tag, got:\n%s", got)
+	}
+}
+

@@ -38,9 +38,17 @@ func parseSQL(sql string) (string, []fieldInfo, error) {
 		return "", nil, err
 	}
 
+	// Extract table-level primary key constraints like: PRIMARY KEY (`id`) or PRIMARY KEY (id, other_id)
+	// so we can mark the corresponding fields even if the column definition itself doesn't contain "primary key".
+	pkCols := extractPrimaryKeyColumns(fieldDefinitions)
+	pkSet := make(map[string]struct{}, len(pkCols))
+	for _, c := range pkCols {
+		pkSet[strings.ToLower(c)] = struct{}{}
+	}
+
 	var fields []fieldInfo
 	for _, def := range fieldDefinitions {
-		fi, err := parseField(def)
+		fi, err := parseField(def, pkSet)
 		if err != nil {
 			return "", nil, err
 		}
@@ -51,6 +59,36 @@ func parseSQL(sql string) (string, []fieldInfo, error) {
 	}
 
 	return tableName, fields, nil
+}
+
+// extractPrimaryKeyColumns returns column names declared in table-level PRIMARY KEY constraints.
+// Example defs:
+//
+//	PRIMARY KEY (`id`)
+//	PRIMARY KEY (id, other_id)
+//
+// It is intentionally conservative: it only parses column identifiers inside the parentheses.
+func extractPrimaryKeyColumns(defs []string) []string {
+	var out []string
+	// Capture content inside PRIMARY KEY ( ... ).
+	re := regexp.MustCompile(`(?i)^\s*PRIMARY\s+KEY\s*\(([^\)]*)\)`)
+	// Match identifiers optionally wrapped in backticks.
+	identRe := regexp.MustCompile("[`]?([A-Za-z0-9_]+)[`]?")
+
+	for _, d := range defs {
+		m := re.FindStringSubmatch(strings.TrimSpace(d))
+		if len(m) < 2 {
+			continue
+		}
+		inside := m[1]
+		idents := identRe.FindAllStringSubmatch(inside, -1)
+		for _, im := range idents {
+			if len(im) >= 2 {
+				out = append(out, im[1])
+			}
+		}
+	}
+	return out
 }
 
 func extractTableName(sql string) (string, error) {
@@ -173,7 +211,7 @@ func splitFieldDefinitions(body string) []string {
 	return defs
 }
 
-func parseField(def string) (fieldInfo, error) {
+func parseField(def string, primaryKeyCols map[string]struct{}) (fieldInfo, error) {
 	// Improved regex to fully capture type description
 	re := regexp.MustCompile("[\x60]?(\\w+)[\x60]?\\s+(.+)")
 	matches := re.FindStringSubmatch(def)
@@ -186,6 +224,15 @@ func parseField(def string) (fieldInfo, error) {
 	if len(fieldName) == 0 || []byte(fieldName)[0] < 'a' || []byte(fieldName)[0] > 'z' {
 		return fieldInfo{}, nil
 	}
+
+	// Apply table-level PRIMARY KEY constraints.
+	if _, ok := primaryKeyCols[strings.ToLower(fieldName)]; ok {
+		// We store this as a gorm tag flag; buildGormTags will render it.
+		// Note: for composite primary keys gorm typically needs additional options;
+		// this at least marks the columns as primaryKey.
+		// (If the column already has inline primary key, this is idempotent.)
+		// Defer actual insertion after mapTypeAndTags so we don't lose other tags.
+	}
 	typeInfo := strings.ToLower(strings.TrimSpace(matches[2]))
 
 	// Preserve the original type mapping.
@@ -193,6 +240,9 @@ func parseField(def string) (fieldInfo, error) {
 	if fieldName == "id" {
 		// Special case for "id" field: use uint64 and primary key tag by default.
 		goType = "uint64"
+	}
+	if _, ok := primaryKeyCols[strings.ToLower(fieldName)]; ok {
+		tags["primaryKey"] = "true"
 	}
 
 	// Conservative enhancement: detect common constraints and add gorm tags.
@@ -287,6 +337,11 @@ func mapTypeAndTags(sqlType string) (string, map[string]string) {
 			goType = "int64"
 		}
 	case "bit":
+		// BIT(1) is often used as a boolean.
+		if strings.HasPrefix(s, "bit(1)") {
+			goType = "bool"
+			break
+		}
 		goType = "[]byte"
 	case "float":
 		goType = "float32"
