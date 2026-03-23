@@ -4,13 +4,13 @@ import (
 	"gorm.io/gorm"
 )
 
-type DBData interface {
+type Model interface {
 	ID() uint64
 	GetCreateDDL() string
 	TableName() string
 }
 
-type DBContext interface {
+type Session interface {
 	DB() *gorm.DB
-	CreateTableIfNotExists(table DBData) error
+	CreateTableIfNotExists(table Model) error
 }

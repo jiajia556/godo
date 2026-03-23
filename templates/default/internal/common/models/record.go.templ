@@ -9,23 +9,23 @@ type Record struct {
 	*models.BaseRecord[*{{.ModelStructName}}]
 }
 
-func NewRecord(ctx ...mysql.DBContext) *Record {
-	var dbContext mysql.DBContext
-    if len(ctx) > 0 {
-        dbContext = ctx[0]
-    } else {
-        dbContext = mysql.NewTxContext()
-    }
+func NewRecord(session ...mysql.Session) *Record {
+	var dbSession mysql.Session
+	if len(session) > 0 {
+		dbSession = session[0]
+	} else {
+		dbSession = mysql.NewTxSession()
+	}
 	if mysql.AutoCreateTable() {
-        err := dbContext.CreateTableIfNotExists(new({{.ModelStructName}}))
+        err := dbSession.CreateTableIfNotExists(new({{.ModelStructName}}))
         if err != nil {
             panic(err)
         }
     }
 	r := &Record{
 		BaseRecord: &models.BaseRecord[*{{.ModelStructName}}]{
-			DBContext: dbContext,
-			Data:      new({{.ModelStructName}}),
+			Session: dbSession,
+			Model:   new({{.ModelStructName}}),
 		},
 	}
 	return r

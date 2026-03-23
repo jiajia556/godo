@@ -3,38 +3,38 @@ package models
 import "{{.ProjectName}}/internal/common/database/mysql"
 
 type DBRecord interface {
-	SetCtx(ctx mysql.DBContext)
-	SetData(data mysql.DBData)
+	SetSession(session mysql.Session)
+	SetModel(data mysql.Model)
 }
-type BaseRecord[T mysql.DBData] struct {
-	mysql.DBContext
-	Data T
+type BaseRecord[T mysql.Model] struct {
+	mysql.Session
+	Model T
 }
 
 func (m *BaseRecord[T]) Exists() bool {
-	return m.Data.ID() > 0
+	return m.Model.ID() > 0
 }
 
 func (m *BaseRecord[T]) Create() error {
-	return m.DB().Create(m.Data).Error
+	return m.DB().Create(m.Model).Error
 }
 
 func (m *BaseRecord[T]) Update() error {
-	return m.DB().Save(m.Data).Error
+	return m.DB().Save(m.Model).Error
 }
 
 func (m *BaseRecord[T]) Read(id uint64) error {
-	return m.DB().Take(m.Data, id).Error
+	return m.DB().Take(m.Model, id).Error
 }
 
 func (m *BaseRecord[T]) Delete() error {
-	return m.DB().Delete(m.Data).Error
+	return m.DB().Delete(m.Model).Error
 }
 
-func (m *BaseRecord[T]) SetCtx(ctx mysql.DBContext) {
-	m.DBContext = ctx
+func (m *BaseRecord[T]) SetSession(session mysql.Session) {
+	m.Session = session
 }
 
-func (m *BaseRecord[T]) SetData(data mysql.DBData) {
-	m.Data = data.(T)
+func (m *BaseRecord[T]) SetModel(data mysql.Model) {
+	m.Model = data.(T)
 }

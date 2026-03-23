@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"gorm.io/driver/mysql"
+	mysqlDriver "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
@@ -103,19 +103,19 @@ func AutoCreateTable() bool {
 	return autoCreateTable
 }
 
-func NewTxContext() *TxContext {
-	return &TxContext{base: GetDB()}
+func NewTxSession() *TxSession {
+	return &TxSession{base: GetDB()}
 }
 
-type TxContext struct {
+type TxSession struct {
 	base *gorm.DB
 	tx   *gorm.DB
 }
 
 // Begin starts a transaction; returns an error if a transaction is already active.
-func (m *TxContext) Begin() error {
+func (m *TxSession) Begin() error {
 	if m == nil {
-		return errors.New("nil TxContext")
+		return errors.New("nil TxSession")
 	}
 	if m.base == nil {
 		m.base = GetDB()
@@ -132,9 +132,9 @@ func (m *TxContext) Begin() error {
 }
 
 // Commit commits the transaction; it can only be called when a transaction is active.
-func (m *TxContext) Commit() error {
+func (m *TxSession) Commit() error {
 	if m == nil {
-		return errors.New("nil TxContext")
+		return errors.New("nil TxSession")
 	}
 	if m.tx == nil {
 		return errors.New("no active transaction")
@@ -145,9 +145,9 @@ func (m *TxContext) Commit() error {
 }
 
 // Rollback rolls back the transaction; it can only be called when a transaction is active.
-func (m *TxContext) Rollback() error {
+func (m *TxSession) Rollback() error {
 	if m == nil {
-		return errors.New("nil TxContext")
+		return errors.New("nil TxSession")
 	}
 	if m.tx == nil {
 		return errors.New("no active transaction")
@@ -161,9 +161,9 @@ func (m *TxContext) Rollback() error {
 // - fn returns error: rollback and return that error (wrap if rollback fails)
 // - fn panics: rollback and re-panic (don't swallow the failure)
 // - fn returns nil: commit
-func (m *TxContext) InTx(fn func(tx *gorm.DB) error) (err error) {
+func (m *TxSession) InTx(fn func(tx *gorm.DB) error) (err error) {
 	if m == nil {
-		return errors.New("nil TxContext")
+		return errors.New("nil TxSession")
 	}
 	if fn == nil {
 		return errors.New("nil tx function")
@@ -194,9 +194,9 @@ func (m *TxContext) InTx(fn func(tx *gorm.DB) error) (err error) {
 // DB returns the *gorm.DB that should be used currently:
 // - if a transaction is active: return the transactional handle
 // - otherwise: return the base connection
-func (m *TxContext) DB() *gorm.DB {
+func (m *TxSession) DB() *gorm.DB {
 	if m == nil {
-		panic("nil TxContext")
+		panic("nil TxSession")
 	}
 	if m.tx != nil {
 		return m.tx
@@ -207,7 +207,7 @@ func (m *TxContext) DB() *gorm.DB {
 	return m.base
 }
 
-func (m *TxContext) CreateTableIfNotExists(table DBData) error {
+func (m *TxSession) CreateTableIfNotExists(table Model) error {
 	db := m.DB()
 
 	tableName := table.TableName()

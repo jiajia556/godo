@@ -9,23 +9,23 @@ type List struct {
 	*models.BaseList[*{{.ModelStructName}}, Record]
 }
 
-func NewList(ctx ...mysql.DBContext) *List {
-	var dbContext mysql.DBContext
-    if len(ctx) > 0 {
-        dbContext = ctx[0]
-    } else {
-        dbContext = mysql.NewTxContext()
-    }
+func NewList(session ...mysql.Session) *List {
+	var dbSession mysql.Session
+	if len(session) > 0 {
+		dbSession = session[0]
+	} else {
+		dbSession = mysql.NewTxSession()
+	}
 	if mysql.AutoCreateTable() {
-        err := dbContext.CreateTableIfNotExists(new({{.ModelStructName}}))
+        err := dbSession.CreateTableIfNotExists(new({{.ModelStructName}}))
         if err != nil {
             panic(err)
         }
     }
 	l := &List{
 		BaseList: &models.BaseList[*{{.ModelStructName}}, Record]{
-			DBContext: dbContext,
-            Records:   make([]*{{.ModelStructName}}, 0),
+			Session: dbSession,
+            Records: make([]*{{.ModelStructName}}, 0),
 		},
 	}
 

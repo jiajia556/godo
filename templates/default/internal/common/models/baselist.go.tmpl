@@ -2,8 +2,8 @@ package models
 
 import "{{.ProjectName}}/internal/common/database/mysql"
 
-type BaseList[T mysql.DBData, R DBRecord] struct {
-	mysql.DBContext
+type BaseList[T mysql.Model, R DBRecord] struct {
+	mysql.Session
 	Records []T
 	total   int64
 }
@@ -27,8 +27,8 @@ func (l *BaseList[T, R]) SetTotal(total int64) {
 func (l *BaseList[T, R]) Foreach(fn func(key int, value R) (isBreak bool)) {
 	for k, data := range l.Records {
 		var r R
-		r.SetCtx(l.DBContext)
-		r.SetData(data)
+		r.SetSession(l.Session)
+		r.SetModel(data)
 		if fn(k, r) {
 			break
 		}
