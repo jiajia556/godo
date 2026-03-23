@@ -55,13 +55,8 @@ func initProject(name string) {
 		ProjectNameTmpls := []string{
 			"go.mod", "main.go",
 			"godoconfig.json",
-			"baserecord.go",
-			"baselist.go",
 			"outputmsg.go",
 			"config.go",
-			"mysql.go",
-			"baserecord.go",
-			"baselist.go",
 		}
 		if slices.Contains(ProjectNameTmpls, fileName) {
 			data := template.ProjectNameData{ProjectName: name, CmdName: "default-api"}

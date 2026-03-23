@@ -1,13 +1,15 @@
 package models
 
-import "{{.ProjectName}}/internal/common/database/mysql"
+import (
+	"github.com/jiajia556/tool-box/mysqlx"
+)
 
 type DBRecord interface {
-	SetSession(session mysql.Session)
-	SetModel(data mysql.Model)
+	SetSession(session mysqlx.Session)
+	SetModel(data mysqlx.Model)
 }
-type BaseRecord[T mysql.Model] struct {
-	mysql.Session
+type BaseRecord[T mysqlx.Model] struct {
+	mysqlx.Session
 	Model T
 }
 
@@ -31,10 +33,10 @@ func (m *BaseRecord[T]) Delete() error {
 	return m.DB().Delete(m.Model).Error
 }
 
-func (m *BaseRecord[T]) SetSession(session mysql.Session) {
+func (m *BaseRecord[T]) SetSession(session mysqlx.Session) {
 	m.Session = session
 }
 
-func (m *BaseRecord[T]) SetModel(data mysql.Model) {
+func (m *BaseRecord[T]) SetModel(data mysqlx.Model) {
 	m.Model = data.(T)
 }

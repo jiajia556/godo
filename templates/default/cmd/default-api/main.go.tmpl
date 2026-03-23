@@ -3,13 +3,13 @@ package main
 import (
 	"flag"
 
-	"{{.ProjectName}}/internal/common/database/mysql"
 	"{{.ProjectName}}/internal/common/transport/http/output"
 	"{{.ProjectName}}/internal/{{.CmdName}}/config"
 	"{{.ProjectName}}/internal/{{.CmdName}}/transport/http/outputmsg"
 	"{{.ProjectName}}/internal/{{.CmdName}}/transport/http/router"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jiajia556/tool-box/mysqlx"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 		panic(err)
 	}
 
-	err = mysql.InitMysql(config.GetConfig().Mysql)
+	err = mysqlx.InitMysql(config.GetConfig().Mysql)
 	if err != nil {
 		panic(err)
 	}

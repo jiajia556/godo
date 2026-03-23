@@ -1,22 +1,23 @@
 package {{.ModelPkg}}
 
 import (
-	"{{.ProjectName}}/internal/common/database/mysql"
 	"{{.ProjectName}}/internal/common/models"
+
+	"github.com/jiajia556/tool-box/mysqlx"
 )
 
 type Record struct {
 	*models.BaseRecord[*{{.ModelStructName}}]
 }
 
-func NewRecord(session ...mysql.Session) *Record {
-	var dbSession mysql.Session
+func NewRecord(session ...mysqlx.Session) *Record {
+	var dbSession mysqlx.Session
 	if len(session) > 0 {
 		dbSession = session[0]
 	} else {
-		dbSession = mysql.NewTxSession()
+		dbSession = mysqlx.NewTxSession()
 	}
-	if mysql.AutoCreateTable() {
+	if mysqlx.AutoCreateTable() {
         err := dbSession.CreateTableIfNotExists(new({{.ModelStructName}}))
         if err != nil {
             panic(err)

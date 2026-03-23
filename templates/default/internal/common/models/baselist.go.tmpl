@@ -1,9 +1,9 @@
 package models
 
-import "{{.ProjectName}}/internal/common/database/mysql"
+import "github.com/jiajia556/tool-box/mysqlx"
 
-type BaseList[T mysql.Model, R DBRecord] struct {
-	mysql.Session
+type BaseList[T mysqlx.Model, R DBRecord] struct {
+	mysqlx.Session
 	Records []T
 	total   int64
 }
