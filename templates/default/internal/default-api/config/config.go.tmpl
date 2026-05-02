@@ -2,11 +2,11 @@ package config
 
 import (
 	"{{.ProjectName}}/internal/common/config"
-	"{{.ProjectName}}/internal/common/database/mysql"
+	"github.com/jiajia556/tool-box/mysqlx"
 )
 
 type Config struct {
-	Mysql mysql.MysqlConfig `json:"mysql" yaml:"mysql"`
+	Mysql mysqlx.MysqlConfig `json:"mysql" yaml:"mysql"`
 }
 
 var cfg *config.ConfigManager[Config]
