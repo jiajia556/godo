@@ -7,7 +7,7 @@ import (
 )
 
 type List struct {
-	*models.BaseList[*{{.ModelStructName}}, Record]
+	*models.BaseList[*{{.ModelStructName}}, *Record]
 }
 
 func NewList(session ...mysqlx.Session) *List {
@@ -24,7 +24,7 @@ func NewList(session ...mysqlx.Session) *List {
         }
     }
 	l := &List{
-		BaseList: &models.BaseList[*{{.ModelStructName}}, Record]{
+		BaseList: &models.BaseList[*{{.ModelStructName}}, *Record]{
 			Session: dbSession,
             Records: make([]*{{.ModelStructName}}, 0),
 		},

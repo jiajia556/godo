@@ -24,12 +24,12 @@ func (l *BaseList[T, R]) SetTotal(total int64) {
 	l.total = total
 }
 
-func (l *BaseList[T, R]) Foreach(fn func(key int, value R) (isBreak bool)) {
+func (l *BaseList[T, R]) Foreach(fn func(key int, value R) bool) {
 	for k, data := range l.Records {
 		var r R
 		r.SetSession(l.Session)
 		r.SetModel(data)
-		if fn(k, r) {
+		if !fn(k, r) {
 			break
 		}
 	}
