@@ -21,7 +21,6 @@ var buildCmd = &cobra.Command{
 
 		rt.GenRouter(cmdName)
 
-		//build.Build(string(content), app, appRoot, apiRoot, version, goos, goarch, isApi)
 		build(cmdName, version, goos, goarch)
 	},
 }

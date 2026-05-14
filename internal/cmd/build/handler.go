@@ -44,6 +44,8 @@ func build(cmdName, version, goos, goarch string) {
 	}
 	if goos == "windows" {
 		outName += ".exe"
+	} else {
+		outName += ".bin"
 	}
 
 	runner := utils.NewCommandRunner()
