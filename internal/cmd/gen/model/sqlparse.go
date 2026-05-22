@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -259,6 +260,10 @@ func parseField(def string, primaryKeyCols map[string]struct{}) (fieldInfo, erro
 	if strings.Contains(typeInfo, "not null") {
 		tags["notNull"] = "true"
 	}
+	// MySQL generated columns should be query-only in GORM.
+	if isGeneratedColumn(typeInfo) {
+		tags["->"] = "true"
+	}
 	// Best-effort DEFAULT value extraction.
 	if idx := strings.Index(strings.ToUpper(typeInfo), "DEFAULT "); idx >= 0 {
 		after := strings.TrimSpace(typeInfo[idx+8:])
@@ -285,6 +290,10 @@ func parseField(def string, primaryKeyCols map[string]struct{}) (fieldInfo, erro
 		gormTags: buildGormTags(fieldName, tags),
 		jsonTag:  toSnakeCase(fieldName),
 	}, nil
+}
+
+func isGeneratedColumn(typeInfo string) bool {
+	return strings.Contains(typeInfo, "generated always as") || strings.Contains(typeInfo, " as (")
 }
 
 func mapTypeAndTags(sqlType string) (string, map[string]string) {
@@ -377,7 +386,14 @@ func mapTypeAndTags(sqlType string) (string, map[string]string) {
 
 func buildGormTags(fieldName string, tags map[string]string) string {
 	parts := []string{"column:" + fieldName}
-	for k, v := range tags {
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		v := tags[k]
 		if v == "true" {
 			parts = append(parts, k)
 		} else {

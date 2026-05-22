@@ -18,7 +18,8 @@ func NewList(session ...mysqlx.Session) *List {
 		dbSession = mysqlx.NewTxSession()
 	}
 	if mysqlx.AutoCreateTable() {
-        err := dbSession.CreateTableIfNotExists(new({{.ModelStructName}}))
+	    createTableSession := mysqlx.NewTxSession()
+        err := createTableSession.CreateTableIfNotExists(new({{.ModelStructName}}))
         if err != nil {
             panic(err)
         }
@@ -28,6 +29,9 @@ func NewList(session ...mysqlx.Session) *List {
 		BaseList: &models.BaseList[*{{.ModelStructName}}, *Record]{
 			Session: dbSession,
             Records: &records,
+            RecordFactory: func() *Record {
+                return NewRecord(dbSession)
+            },
 		},
 	}
 

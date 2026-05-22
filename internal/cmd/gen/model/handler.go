@@ -207,6 +207,8 @@ func generateModelFile(modelPkg, tableName, structName, structText, createDDL, t
 		ModelStructName: structName,
 		TableName:       tableName,
 		CreateDDL:       createDDL,
+		UseTime:         strings.Contains(structText, "time.Time"),
+		UseDecimal:      strings.Contains(structText, "decimal.Decimal"),
 	}
 
 	// Create directory structure
@@ -223,10 +225,5 @@ func generateModelFile(modelPkg, tableName, structName, structText, createDDL, t
 }
 
 func runPostGenerationTasks() {
-	modelsPath, err := service.GetAbsPath("internal/common/models")
-	if err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error getting models path: %v", err))
-	}
-	utils.RunCommand("goimports", "-w", modelsPath)
 	utils.RunCommand("go", "mod", "tidy")
 }

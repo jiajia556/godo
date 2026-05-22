@@ -1,10 +1,15 @@
 package {{.ModelPkg}}
 
+{{- if or .UseTime .UseDecimal}}
 import (
+{{- if .UseTime}}
 	"time"
-
+{{- end}}
+{{- if .UseDecimal}}
 	"github.com/shopspring/decimal"
+{{- end}}
 )
+{{- end}}
 
 {{.ModelStruct}}
 

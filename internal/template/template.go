@@ -38,6 +38,8 @@ type ModelData struct {
 	ModelStructName string
 	TableName       string
 	CreateDDL       string
+	UseTime         bool
+	UseDecimal      bool
 }
 
 type TemplateWriter struct {
