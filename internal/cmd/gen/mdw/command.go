@@ -8,8 +8,8 @@ var middlewareCmd = &cobra.Command{
 	Long:    "Generates middleware files with specified names",
 	Example: "  godo gen mdw auth\n  god gen mdw logging cache",
 	Args:    cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		genMiddleware(args)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return genMiddleware(args)
 	},
 }
 

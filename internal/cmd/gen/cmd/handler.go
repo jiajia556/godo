@@ -1,10 +1,10 @@
 package cmd
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/jiajia556/godo/internal/service"
@@ -13,31 +13,76 @@ import (
 	"github.com/jiajia556/godo/templates"
 )
 
-func genCmd(cmdName string) {
-	if service.IsCmdExists(cmdName) {
-		utils.OutputFatal("Error: cmd already exists")
+type cmdTemplateSpec struct {
+	root        string
+	placeholder string
+	directories []string
+}
+
+var formatGoFiles = utils.FormatGoFiles
+
+func genCmd(cmdName, cmdType string) (err error) {
+	if err := validateCmdName(cmdName); err != nil {
+		return err
 	}
-	templateDir := templates.DEFAULT_TEMPLATE_DIR
-	cmdDirs := []string{templateDir + "/cmd", templateDir + "/internal/default-api"}
-	for _, cmdDir := range cmdDirs {
-		_ = fs.WalkDir(templates.TemplateFS, cmdDir, func(originalPath string, d fs.DirEntry, err error) error {
-			if err != nil {
-				utils.OutputFatal(err)
+	cmdType, err = service.NormalizeCmdType(cmdType)
+	if err != nil {
+		return err
+	}
+	templateSpec := templateForCmdType(cmdType)
+
+	cmdRoot, err := service.GetAbsPath(filepath.Join("cmd", cmdName))
+	if err != nil {
+		return fmt.Errorf("resolve command directory: %w", err)
+	}
+	internalRoot, err := service.GetAbsPath(filepath.Join("internal", cmdName))
+	if err != nil {
+		return fmt.Errorf("resolve internal command directory: %w", err)
+	}
+	for _, target := range []string{cmdRoot, internalRoot} {
+		if _, statErr := os.Lstat(target); statErr == nil {
+			return fmt.Errorf("command target already exists: %s", target)
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("inspect command target %s: %w", target, statErr)
+		}
+	}
+
+	projectName, err := service.GetProjectName()
+	if err != nil {
+		return fmt.Errorf("get project name: %w", err)
+	}
+
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(cmdRoot)
+			_ = os.RemoveAll(internalRoot)
+		}
+	}()
+
+	var generatedFiles []string
+	for _, cmdDir := range templateSpec.directories {
+		if err := fs.WalkDir(templates.TemplateFS, cmdDir, func(originalPath string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d == nil {
+				return fmt.Errorf("walk template %s: missing directory entry", originalPath)
 			}
 			if d.IsDir() {
 				return nil
 			}
 
-			path := strings.TrimPrefix(originalPath, templateDir)
-			path = strings.ReplaceAll(path, "default-api", cmdName)
-			path, err = service.GetAbsPath(path)
+			relativePath := strings.TrimPrefix(originalPath, templateSpec.root)
+			relativePath = strings.TrimPrefix(relativePath, "/")
+			relativePath = strings.ReplaceAll(relativePath, templateSpec.placeholder, cmdName)
+			path, err := service.GetAbsPath(filepath.FromSlash(relativePath))
 			if err != nil {
-				utils.OutputFatal(err)
+				return fmt.Errorf("resolve generated path %s: %w", originalPath, err)
 			}
 			dirPath := filepath.Dir(path)
-			err = os.MkdirAll(dirPath, 0755)
-			if err != nil {
-				utils.OutputFatal(err)
+			if err = os.MkdirAll(dirPath, 0o755); err != nil {
+				return fmt.Errorf("create generated directory %s: %w", dirPath, err)
 			}
 
 			if !strings.HasSuffix(path, ".tmpl") {
@@ -47,42 +92,45 @@ func genCmd(cmdName string) {
 
 			contentByte, err := fs.ReadFile(templates.TemplateFS, originalPath)
 			if err != nil {
-				utils.OutputFatal(err)
+				return fmt.Errorf("read embedded template %s: %w", originalPath, err)
 			}
-			content := string(contentByte)
-
-			fileName := filepath.Base(targetPath)
-			projectName, err := service.GetProjectName()
-			if err != nil {
-				utils.OutputFatal(err)
+			data := template.ProjectNameData{ProjectName: projectName, CmdName: cmdName}
+			if err = template.CreateFile(string(contentByte), data, targetPath); err != nil {
+				return fmt.Errorf("render template %s: %w", originalPath, err)
 			}
-
-			ProjectNameTmpls := []string{
-				"go.mod", "main.go",
-				"godoconfig.json",
-				"baserecord.go",
-				"baselist.go",
-				"outputmsg.go",
-				"config.go",
-			}
-			if slices.Contains(ProjectNameTmpls, fileName) {
-				data := template.ProjectNameData{ProjectName: projectName, CmdName: cmdName}
-				err = template.CreateFile(content, data, targetPath)
-				if err != nil {
-					utils.OutputFatal(err)
-				}
-			} else {
-				f, _ := os.Create(targetPath)
-				_, err = f.WriteString(content)
-				if err != nil {
-					utils.OutputFatal(err)
-				}
-				err = f.Close()
-				if err != nil {
-					utils.OutputFatal(err)
-				}
+			if strings.HasSuffix(targetPath, ".go") {
+				generatedFiles = append(generatedFiles, targetPath)
 			}
 			return nil
-		})
+		}); err != nil {
+			return fmt.Errorf("generate command %q: %w", cmdName, err)
+		}
 	}
+	if err := formatGoFiles(generatedFiles...); err != nil {
+		return fmt.Errorf("format generated command: %w", err)
+	}
+	if err := service.SetCmdType(cmdName, cmdType); err != nil {
+		return fmt.Errorf("record command type: %w", err)
+	}
+	complete = true
+	return nil
+}
+
+func templateForCmdType(cmdType string) cmdTemplateSpec {
+	if cmdType == service.CmdTypeWorker {
+		return cmdTemplateSpec{
+			root:        "worker",
+			placeholder: "default-worker",
+			directories: []string{"worker/cmd/default-worker", "worker/internal/default-worker"},
+		}
+	}
+	return cmdTemplateSpec{
+		root:        templates.DEFAULT_TEMPLATE_DIR,
+		placeholder: "default-api",
+		directories: []string{"default/cmd/default-api", "default/internal/default-api"},
+	}
+}
+
+func validateCmdName(name string) error {
+	return service.ValidateCmdName(name)
 }

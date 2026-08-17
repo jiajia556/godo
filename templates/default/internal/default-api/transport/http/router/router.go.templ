@@ -152,9 +152,18 @@ func registerHTTPMethods(router *gin.Engine, httpMethod string, path string, han
 		router.POST(path, handlers...)
 	case "GET":
 		router.GET(path, handlers...)
-	case "ALL": // Register both protocols
-		router.POST(path, handlers...)
-		router.GET(path, handlers...)
+	case "PUT":
+		router.PUT(path, handlers...)
+	case "PATCH":
+		router.PATCH(path, handlers...)
+	case "DELETE":
+		router.DELETE(path, handlers...)
+	case "HEAD":
+		router.HEAD(path, handlers...)
+	case "OPTIONS":
+		router.OPTIONS(path, handlers...)
+	case "ALL":
+		router.Any(path, handlers...)
 	}
 }
 

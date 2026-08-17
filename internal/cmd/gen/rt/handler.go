@@ -5,9 +5,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/jiajia556/godo/internal/service"
@@ -24,6 +24,13 @@ const (
 	middlewareAnnotation = "@middleware"  // Annotation prefix for middlewares
 )
 
+var supportedHTTPMethods = map[string]struct{}{
+	"GET": {}, "POST": {}, "PUT": {}, "PATCH": {}, "DELETE": {},
+	"HEAD": {}, "OPTIONS": {}, "ALL": {},
+}
+
+var formatGoFiles = utils.FormatGoFiles
+
 // routeGenerator maintains state during route generation process
 type routeGenerator struct {
 	imports           []string          // Import paths for controller packages
@@ -35,13 +42,19 @@ type routeGenerator struct {
 	projectRoot       string            // Current project root directory
 }
 
-func GenRouter(cmdName string) {
+func GenRouter(cmdName string) error {
 	var err error
 	if cmdName == "" {
 		cmdName, err = service.GetDefaultCmd()
 		if err != nil {
-			utils.OutputFatal(err)
+			return fmt.Errorf("get default command: %w", err)
 		}
+	}
+	if err := service.ValidateCmdName(cmdName); err != nil {
+		return fmt.Errorf("validate command name: %w", err)
+	}
+	if err := service.RequireCmdType(cmdName, service.CmdTypeAPI); err != nil {
+		return err
 	}
 
 	rg := &routeGenerator{
@@ -50,34 +63,38 @@ func GenRouter(cmdName string) {
 		middlewares: make(map[string]string),
 	}
 	if rg.projectName, err = service.GetProjectName(); err != nil {
-		utils.OutputFatal("Failed to get project name:", err)
+		return fmt.Errorf("get project name: %w", err)
 	}
 	if rg.projectRoot, err = service.GetProjectRoot(); err != nil {
-		utils.OutputFatal("Failed to get project root:", err)
+		return fmt.Errorf("get project root: %w", err)
 	}
 	rootPath, err := service.GetAbsPath(fmt.Sprintf("internal/%s/transport/http/api", cmdName))
 	if err != nil {
-		utils.OutputFatal("Failed to get absolute rootPath:", err)
+		return fmt.Errorf("resolve controller root: %w", err)
 	}
 
 	tmplData, err := rg.generateTemplateData(rootPath)
 	if err != nil {
-		utils.OutputFatal("Template data generation failed:", err)
+		return fmt.Errorf("generate router template data: %w", err)
 	}
 
 	routePath, err := service.GetAbsPath(fmt.Sprintf("internal/%s/transport/http/router", cmdName))
 	if err != nil {
-		utils.OutputFatal("Failed to get absolute routePath:", err)
+		return fmt.Errorf("resolve router output directory: %w", err)
 	}
 	outputPath := filepath.Join(routePath, generatedFileName)
 	content, err := templates.TemplateFS.ReadFile("default/internal/default-api/transport/http/router/router.go.templ")
 	if err != nil {
-		utils.OutputFatal(err)
+		return fmt.Errorf("read router template: %w", err)
 	}
 	err = template.CreateFile(string(content), tmplData, outputPath)
 	if err != nil {
-		utils.OutputFatal(err)
+		return fmt.Errorf("write router file: %w", err)
 	}
+	if err = formatGoFiles(outputPath); err != nil {
+		return fmt.Errorf("format router file: %w", err)
+	}
+	return nil
 }
 
 // generateTemplateData collects and prepares data for template generation
@@ -105,8 +122,7 @@ func (rg *routeGenerator) generateTemplateData(root string) (template.RouterTmpl
 func (rg *routeGenerator) analyzeProjectStructure(root string) error {
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			log.Printf("Directory access error: %v", err)
-			return nil
+			return fmt.Errorf("access %s: %w", path, err)
 		}
 
 		if d.IsDir() && d.Name() == controllerDirName {
@@ -169,15 +185,21 @@ func (rg *routeGenerator) analyzeControllerFile(filePath string) error {
 			rg.initRegistrations = append(rg.initRegistrations,
 				fmt.Sprintf("\n\tRegisterController(%s())", fullTypeName))
 
-			rg.extractAnnotations(node, controllerName, pkgPath+"."+controllerName)
+			if err := rg.extractAnnotations(node, controllerName, pkgPath+"."+controllerName); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
 // extractAnnotations parses controller method annotations
-func (rg *routeGenerator) extractAnnotations(node *ast.File, typeName, pkgPrefix string) {
+func (rg *routeGenerator) extractAnnotations(node *ast.File, typeName, pkgPrefix string) error {
+	var annotationErr error
 	ast.Inspect(node, func(n ast.Node) bool {
+		if annotationErr != nil {
+			return false
+		}
 		fnDecl, ok := n.(*ast.FuncDecl)
 		if !ok || fnDecl.Recv == nil || len(fnDecl.Recv.List) == 0 {
 			return true
@@ -189,38 +211,52 @@ func (rg *routeGenerator) extractAnnotations(node *ast.File, typeName, pkgPrefix
 		}
 
 		annotationKey := fmt.Sprintf("%s.%s", pkgPrefix, fnDecl.Name.Name)
-		rg.processMethodAnnotations(fnDecl, annotationKey)
+		annotationErr = rg.processMethodAnnotations(fnDecl, annotationKey)
 		return true
 	})
+	return annotationErr
 }
 
-func (rg *routeGenerator) processMethodAnnotations(fnDecl *ast.FuncDecl, key string) {
+func (rg *routeGenerator) processMethodAnnotations(fnDecl *ast.FuncDecl, key string) error {
 	if fnDecl.Doc == nil {
 		rg.httpMethods[key] = "POST"
-		return
+		return nil
 	}
 	for _, comment := range fnDecl.Doc.List {
 		text := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
 		switch {
 		case strings.HasPrefix(text, httpMethodAnnotation):
 			method := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(text, httpMethodAnnotation)))
-			if method != "" {
-				rg.httpMethods[key] = method
-			} else {
+			if method == "" {
 				rg.httpMethods[key] = "POST"
+				continue
 			}
+			if _, ok := supportedHTTPMethods[method]; !ok {
+				return fmt.Errorf("unsupported HTTP method %q on %s", method, key)
+			}
+			rg.httpMethods[key] = method
 		case strings.HasPrefix(text, middlewareAnnotation):
-			middlewares := strings.TrimSpace(strings.TrimPrefix(text, middlewareAnnotation))
-			if middlewares != "" {
-				rg.middlewares[key] = middlewares
+			names := strings.Fields(strings.TrimPrefix(text, middlewareAnnotation))
+			for i, name := range names {
+				name = utils.CapitalizeFirstLetter(name)
+				if !token.IsIdentifier(name) {
+					return fmt.Errorf("invalid middleware %q on %s", names[i], key)
+				}
+				names[i] = name
+			}
+			if len(names) > 0 {
+				rg.middlewares[key] = strings.Join(names, " ")
 			}
 		}
 	}
+	return nil
 }
 
 func (rg *routeGenerator) formatHTTPMethods() string {
 	var builder strings.Builder
-	for k, v := range rg.httpMethods {
+	keys := sortedMapKeys(rg.httpMethods)
+	for _, k := range keys {
+		v := rg.httpMethods[k]
 		builder.WriteString(fmt.Sprintf("\t\t\"%s\": \"%s\",\n", k, v))
 	}
 	return builder.String()
@@ -228,13 +264,15 @@ func (rg *routeGenerator) formatHTTPMethods() string {
 
 func (rg *routeGenerator) formatMiddlewares() string {
 	var builder strings.Builder
-	for k, v := range rg.middlewares {
+	keys := sortedMapKeys(rg.middlewares)
+	for _, k := range keys {
+		v := rg.middlewares[k]
 		v = strings.TrimSpace(v)
 		if v == "" {
 			continue
 		}
 
-		components := strings.Split(v, " ")
+		components := strings.Fields(v)
 
 		for i := 0; i < len(components); i++ {
 			components[i] = "middleware." + strings.TrimSpace(components[i])
@@ -244,6 +282,15 @@ func (rg *routeGenerator) formatMiddlewares() string {
 		builder.WriteString(fmt.Sprintf("\t\t\"%s\": %s,\n", k, formatted))
 	}
 	return builder.String()
+}
+
+func sortedMapKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (rg *routeGenerator) middlewareImport() string {

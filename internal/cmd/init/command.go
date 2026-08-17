@@ -9,9 +9,9 @@ var initCmd = &cobra.Command{
 	Long:    "Initialize a new project with the specified name and basic structure",
 	Example: "  godo init myproject\n  god init example.com/myapp",
 	Args:    cobra.ExactArgs(1), // Requires exactly 1 argument
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		projectName := args[0]
-		initProject(projectName)
+		return initProject(projectName)
 	},
 }
 

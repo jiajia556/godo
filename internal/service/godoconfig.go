@@ -13,243 +13,449 @@ import (
 
 type GodoConfig struct {
 	inited        bool
-	ProjectName   string `json:"project_name"`
-	DefaultCmd    string `json:"default_cmd"`
-	DefaultGOOS   string `json:"default_goos"`
-	DefaultGOARCH string `json:"default_goarch"`
+	ProjectName   string            `json:"project_name"`
+	DefaultCmd    string            `json:"default_cmd"`
+	DefaultGOOS   string            `json:"default_goos"`
+	DefaultGOARCH string            `json:"default_goarch"`
+	CmdTypes      map[string]string `json:"cmd_types,omitempty"`
 }
+
+const (
+	CmdTypeAPI    = "api"
+	CmdTypeWorker = "worker"
+
+	ConfigKeyDefaultCmd    = "default_cmd"
+	ConfigKeyDefaultGOOS   = "default_goos"
+	ConfigKeyDefaultGOARCH = "default_goarch"
+)
 
 var (
 	godoConfig  GodoConfig
-	projectRoot string // the directory where godoconfig.json or go.mod was found
+	projectRoot string
 	mu          sync.Mutex
 )
 
-// initGodoConfig locates and loads godoconfig.json or falls back to go.mod module.
-// Behavior:
-// 1. If env GOD_PROJECT_ROOT is set, try that directory first.
-// 2. Otherwise, walk up from cwd searching for godoconfig.json; if not found, use go.mod to derive module.
-// On success, sets godoConfig and projectRoot.
+// initGodoConfig locates and loads project configuration once.
 func initGodoConfig() error {
+	_, _, err := getConfigState()
+	return err
+}
+
+func getConfigState() (GodoConfig, string, error) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if godoConfig.inited {
+	if !godoConfig.inited {
+		if err := initializeConfigLocked(); err != nil {
+			return GodoConfig{}, "", err
+		}
+	}
+	return godoConfig, projectRoot, nil
+}
+
+func initializeConfigLocked() error {
+	godoConfig = GodoConfig{}
+	projectRoot = ""
+
+	if configuredRoot := strings.TrimSpace(os.Getenv("GOD_PROJECT_ROOT")); configuredRoot != "" {
+		root, err := filepath.Abs(configuredRoot)
+		if err != nil {
+			return fmt.Errorf("resolve GOD_PROJECT_ROOT %q: %w", configuredRoot, err)
+		}
+		info, err := os.Stat(root)
+		if err != nil {
+			return fmt.Errorf("inspect GOD_PROJECT_ROOT %s: %w", root, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("GOD_PROJECT_ROOT is not a directory: %s", root)
+		}
+		found, err := loadProjectRootLocked(root)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("GOD_PROJECT_ROOT contains neither godoconfig.json nor a valid go.mod: %s", root)
+		}
 		return nil
 	}
 
-	// 2) Walk up from cwd to root looking for godoconfig.json or go.mod
 	startDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("cannot get working directory: %w", err)
+		return fmt.Errorf("get working directory: %w", err)
 	}
 
 	var triedPaths []string
-	dir := startDir
-	for {
-		tryPkg := filepath.Join(dir, "godoconfig.json")
-		triedPaths = append(triedPaths, tryPkg)
-		if err := loadFromFileIfExists(tryPkg); err == nil {
-			projectRoot = filepath.Clean(dir)
-			godoConfig.inited = true
+	for dir := startDir; ; dir = filepath.Dir(dir) {
+		triedPaths = append(triedPaths, filepath.Join(dir, "godoconfig.json"), filepath.Join(dir, "go.mod"))
+		found, err := loadProjectRootLocked(dir)
+		if err != nil {
+			return err
+		}
+		if found {
 			return nil
 		}
-
-		// If godoconfig.json not found, check go.mod as fallback
-		tryMod := filepath.Join(dir, "go.mod")
-		triedPaths = append(triedPaths, tryMod)
-		if exists(tryMod) {
-			if err := loadFromGoMod(tryMod); err == nil {
-				projectRoot = filepath.Clean(dir)
-				godoConfig.inited = true
-				return nil
-			}
-			// continue walking up if parsing fails
-		}
-
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			break // reached filesystem root
+			break
 		}
-		dir = parent
 	}
 
-	return fmt.Errorf("could not find godoconfig.json nor parse go.mod module; attempted: %s", strings.Join(triedPaths, "; "))
+	return fmt.Errorf("could not find godoconfig.json or go.mod; attempted: %s", strings.Join(triedPaths, "; "))
+}
+
+func loadProjectRootLocked(root string) (bool, error) {
+	configPath := filepath.Join(root, "godoconfig.json")
+	if found, err := regularFileExists(configPath); err != nil {
+		return false, err
+	} else if found {
+		if err := loadFromFile(configPath); err != nil {
+			return false, err
+		}
+		projectRoot = filepath.Clean(root)
+		godoConfig.inited = true
+		return true, nil
+	}
+
+	modPath := filepath.Join(root, "go.mod")
+	if found, err := regularFileExists(modPath); err != nil {
+		return false, err
+	} else if found {
+		if err := loadFromGoMod(modPath); err != nil {
+			return false, err
+		}
+		projectRoot = filepath.Clean(root)
+		godoConfig.inited = true
+		return true, nil
+	}
+	return false, nil
 }
 
 func GetProjectName() (string, error) {
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			return "", err
-		}
+	cfg, _, err := getConfigState()
+	if err != nil {
+		return "", err
 	}
-	if godoConfig.ProjectName == "" {
+	if cfg.ProjectName == "" {
 		return "", errors.New("project name is empty in godoconfig.json or go.mod")
 	}
-	return godoConfig.ProjectName, nil
+	return cfg.ProjectName, nil
 }
 
 func GetDefaultCmd() (string, error) {
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			return "", err
-		}
+	cfg, _, err := getConfigState()
+	if err != nil {
+		return "", err
 	}
-	if godoConfig.DefaultCmd == "" {
-		return "default-api", nil
-	}
-	return godoConfig.DefaultCmd, nil
+	return effectiveDefaultCmd(cfg), nil
 }
 
 func GetDefaultGOOS() (string, error) {
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			return "", err
-		}
+	cfg, _, err := getConfigState()
+	if err != nil {
+		return "", err
 	}
-	if godoConfig.DefaultGOOS == "" {
-		return "linux", nil
-	}
-	return godoConfig.DefaultGOOS, nil
+	return cfg.DefaultGOOS, nil
 }
 
 func GetDefaultGOARCH() (string, error) {
+	cfg, _, err := getConfigState()
+	if err != nil {
+		return "", err
+	}
+	return cfg.DefaultGOARCH, nil
+}
+
+func GetCmdType(cmdName string) (string, error) {
+	if err := ValidateCmdName(cmdName); err != nil {
+		return "", err
+	}
+	cfg, _, err := getConfigState()
+	if err != nil {
+		return "", err
+	}
+	cmdType := cfg.CmdTypes[cmdName]
+	if cmdType == "" {
+		return CmdTypeAPI, nil
+	}
+	return NormalizeCmdType(cmdType)
+}
+
+func RequireCmdType(cmdName, requiredType string) error {
+	cmdType, err := GetCmdType(cmdName)
+	if err != nil {
+		return err
+	}
+	requiredType, err = NormalizeCmdType(requiredType)
+	if err != nil {
+		return err
+	}
+	if cmdType != requiredType {
+		return fmt.Errorf("command %q has type %q; this operation requires %q", cmdName, cmdType, requiredType)
+	}
+	return nil
+}
+
+func SetCmdType(cmdName, cmdType string) error {
+	if err := ValidateCmdName(cmdName); err != nil {
+		return err
+	}
+	cmdType, err := NormalizeCmdType(cmdType)
+	if err != nil {
+		return err
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
 	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
+		if err := initializeConfigLocked(); err != nil {
+			return err
+		}
+	}
+
+	updated := godoConfig
+	updated.CmdTypes = make(map[string]string, len(godoConfig.CmdTypes)+1)
+	for name, existingType := range godoConfig.CmdTypes {
+		updated.CmdTypes[name] = existingType
+	}
+	updated.CmdTypes[cmdName] = cmdType
+	if err := writeConfigFile(filepath.Join(projectRoot, "godoconfig.json"), updated); err != nil {
+		return err
+	}
+	godoConfig = updated
+	return nil
+}
+
+func SetConfigValue(key, value string) (string, error) {
+	key = strings.ToLower(strings.TrimSpace(key))
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !godoConfig.inited {
+		if err := initializeConfigLocked(); err != nil {
 			return "", err
 		}
 	}
-	if godoConfig.DefaultGOARCH == "" {
-		return "amd64", nil
+
+	updated := godoConfig
+	switch key {
+	case ConfigKeyDefaultCmd:
+		if err := ValidateCmdName(value); err != nil {
+			return "", err
+		}
+		cmdPath := filepath.Join(projectRoot, "cmd", value)
+		info, err := os.Stat(cmdPath)
+		if err != nil {
+			return "", fmt.Errorf("inspect command directory %s: %w", cmdPath, err)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("command path is not a directory: %s", cmdPath)
+		}
+		updated.DefaultCmd = value
+	case ConfigKeyDefaultGOOS:
+		value = strings.ToLower(strings.TrimSpace(value))
+		if err := ValidateBuildTarget(value, updated.DefaultGOARCH); err != nil {
+			return "", err
+		}
+		updated.DefaultGOOS = value
+	case ConfigKeyDefaultGOARCH:
+		value = strings.ToLower(strings.TrimSpace(value))
+		if err := ValidateBuildTarget(updated.DefaultGOOS, value); err != nil {
+			return "", err
+		}
+		updated.DefaultGOARCH = value
+	default:
+		return "", fmt.Errorf("config key %q cannot be modified; allowed keys: %s, %s, %s", key, ConfigKeyDefaultCmd, ConfigKeyDefaultGOOS, ConfigKeyDefaultGOARCH)
 	}
-	return godoConfig.DefaultGOARCH, nil
+
+	if err := writeConfigFile(filepath.Join(projectRoot, "godoconfig.json"), updated); err != nil {
+		return "", err
+	}
+	godoConfig = updated
+	return value, nil
 }
 
-// GetDefaultCmdCmd returns the absolute path to the default cmd cmd directory as specified in godoconfig.json.
+func SetBuildTarget(goos, goarch string) (string, string, error) {
+	goos = strings.ToLower(strings.TrimSpace(goos))
+	goarch = strings.ToLower(strings.TrimSpace(goarch))
+	if err := ValidateBuildTarget(goos, goarch); err != nil {
+		return "", "", err
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !godoConfig.inited {
+		if err := initializeConfigLocked(); err != nil {
+			return "", "", err
+		}
+	}
+
+	updated := godoConfig
+	updated.DefaultGOOS = goos
+	updated.DefaultGOARCH = goarch
+	if err := writeConfigFile(filepath.Join(projectRoot, "godoconfig.json"), updated); err != nil {
+		return "", "", err
+	}
+	godoConfig = updated
+	return goos, goarch, nil
+}
+
+func NormalizeCmdType(cmdType string) (string, error) {
+	cmdType = strings.ToLower(strings.TrimSpace(cmdType))
+	switch cmdType {
+	case CmdTypeAPI, CmdTypeWorker:
+		return cmdType, nil
+	default:
+		return "", fmt.Errorf("unsupported command type %q; expected api or worker", cmdType)
+	}
+}
+
 func GetDefaultCmdCmd() (string, error) {
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			return "", err
-		}
+	cfg, root, err := getConfigState()
+	if err != nil {
+		return "", err
 	}
-	return resolvePath("cmd/" + godoConfig.DefaultCmd)
+	return filepath.Join(root, "cmd", effectiveDefaultCmd(cfg)), nil
 }
 
-// GetDefaultCmdInternal returns the absolute path to the default cmd internal directory as specified in godoconfig.json.
 func GetDefaultCmdInternal() (string, error) {
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			return "", err
-		}
+	cfg, root, err := getConfigState()
+	if err != nil {
+		return "", err
 	}
-	return resolvePath("internal/" + godoConfig.DefaultCmd)
+	return filepath.Join(root, "internal", effectiveDefaultCmd(cfg)), nil
 }
 
-// GetAbsPath resolves the given path to an absolute path based on projectRoot if it's not already absolute.
+// GetAbsPath resolves path relative to the discovered project root.
 func GetAbsPath(path string) (string, error) {
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			return "", err
-		}
-	}
 	return resolvePath(path)
 }
 
-// GetProjectRoot returns the absolute path of the discovered project root (where godoconfig.json or go.mod was found).
-// If not yet initialized, it will attempt initialization.
 func GetProjectRoot() (string, error) {
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			return "", err
-		}
+	_, root, err := getConfigState()
+	if err != nil {
+		return "", err
 	}
-	if projectRoot == "" {
-		return "", errors.New("project root is unknown; godoconfig.json and go.mod not found during initialization")
+	if root == "" {
+		return "", errors.New("project root is unknown")
 	}
-	return projectRoot, nil
+	return root, nil
 }
 
-// loadFromFileIfExists tries to read and unmarshal the given path if it exists.
-// On success, it fills godoConfig (but does not set projectRoot - caller must set it).
-func loadFromFileIfExists(path string) error {
-	if !exists(path) {
-		return fmt.Errorf("not found: %s", path)
-	}
+func loadFromFile(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := json.Unmarshal(data, &godoConfig); err != nil {
-		return fmt.Errorf("unmarshal %s: %w", path, err)
+	var loaded GodoConfig
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
 	}
-	ensureDefaults(&godoConfig)
+	if strings.TrimSpace(loaded.ProjectName) == "" {
+		return fmt.Errorf("project_name is empty in %s", path)
+	}
+	ensureDefaults(&loaded)
+	godoConfig = loaded
 	return nil
 }
 
-// loadFromGoMod parses module name from go.mod and fills godoConfig.ProjectName.
-// Caller should set projectRoot on success.
 func loadFromGoMod(modPath string) error {
-	f, err := os.Open(modPath)
+	file, err := os.Open(modPath)
 	if err != nil {
-		return fmt.Errorf("open go.mod %s: %w", modPath, err)
+		return fmt.Errorf("open %s: %w", modPath, err)
 	}
-	defer f.Close()
+	defer file.Close()
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "module ") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				godoConfig.ProjectName = parts[1]
-				ensureDefaults(&godoConfig)
-				return nil
-			}
+		parts := strings.Fields(scanner.Text())
+		if len(parts) >= 2 && parts[0] == "module" {
+			loaded := GodoConfig{ProjectName: parts[1]}
+			ensureDefaults(&loaded)
+			godoConfig = loaded
+			return nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("scan go.mod %s: %w", modPath, err)
+		return fmt.Errorf("scan %s: %w", modPath, err)
 	}
-	return errors.New("module directive not found in go.mod")
+	return fmt.Errorf("module directive not found in %s", modPath)
 }
 
-func ensureDefaults(gp *GodoConfig) {
-	if gp.DefaultGOOS == "" {
-		gp.DefaultGOOS = "linux"
+func ensureDefaults(cfg *GodoConfig) {
+	if cfg.DefaultGOOS == "" {
+		cfg.DefaultGOOS = "linux"
 	}
-	if gp.DefaultGOARCH == "" {
-		gp.DefaultGOARCH = "amd64"
+	if cfg.DefaultGOARCH == "" {
+		cfg.DefaultGOARCH = "amd64"
+	}
+	if cfg.CmdTypes == nil {
+		cfg.CmdTypes = make(map[string]string)
 	}
 }
 
-// exists reports whether the named file exists (and is not a directory).
-func exists(path string) bool {
+func effectiveDefaultCmd(cfg GodoConfig) string {
+	if cfg.DefaultCmd == "" {
+		return "default-api"
+	}
+	return cfg.DefaultCmd
+}
+
+func regularFileExists(path string) (bool, error) {
 	info, err := os.Stat(path)
-	if err != nil {
-		return false
+	if os.IsNotExist(err) {
+		return false, nil
 	}
-	return !info.IsDir()
+	if err != nil {
+		return false, fmt.Errorf("inspect %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return false, fmt.Errorf("expected a file but found a directory: %s", path)
+	}
+	return true, nil
 }
 
-// resolvePath makes cfgPath absolute based on projectRoot if cfgPath is not already absolute.
-// If projectRoot is unknown, resolves relative to current working directory.
-func resolvePath(cfgPath string) (string, error) {
-	if filepath.IsAbs(cfgPath) {
-		return filepath.Clean(cfgPath), nil
+func writeConfigFile(path string, cfg GodoConfig) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", path, err)
 	}
-	// ensure godoconfig initialized so projectRoot may be set
-	if !godoConfig.inited {
-		if err := initGodoConfig(); err != nil {
-			// fallback: join with cwd
-			cwd, _ := os.Getwd()
-			return filepath.Clean(filepath.Join(cwd, cfgPath)), nil
-		}
+	data = append(data, '\n')
+
+	temp, err := os.CreateTemp(filepath.Dir(path), ".godoconfig-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary config file: %w", err)
 	}
-	base := projectRoot
-	if base == "" {
-		// fallback to cwd
-		cwd, _ := os.Getwd()
-		base = cwd
+	tempName := temp.Name()
+	cleanup := func() {
+		_ = temp.Close()
+		_ = os.Remove(tempName)
 	}
-	return filepath.Clean(filepath.Join(base, cfgPath)), nil
+	if _, err := temp.Write(data); err != nil {
+		cleanup()
+		return fmt.Errorf("write temporary config file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("close temporary config file: %w", err)
+	}
+	if err := os.Chmod(tempName, 0o644); err != nil {
+		cleanup()
+		return fmt.Errorf("set config permissions: %w", err)
+	}
+	if err := os.Rename(tempName, path); err != nil {
+		cleanup()
+		return fmt.Errorf("replace %s: %w", path, err)
+	}
+	return nil
+}
+
+func resolvePath(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	_, root, err := getConfigState()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(filepath.Join(root, path)), nil
 }

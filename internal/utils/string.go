@@ -1,6 +1,10 @@
 package utils
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
 // CapitalizeFirstLetter uppercases the first character of s.
 func CapitalizeFirstLetter(s string) string {
@@ -8,7 +12,11 @@ func CapitalizeFirstLetter(s string) string {
 		return s
 	}
 
-	return strings.ToUpper(string(s[0])) + s[1:]
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError && size == 1 {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // LowercaseFirstLetter lowercases the first character of s.
@@ -17,7 +25,11 @@ func LowercaseFirstLetter(s string) string {
 		return s
 	}
 
-	return strings.ToLower(string(s[0])) + s[1:]
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError && size == 1 {
+		return s
+	}
+	return string(unicode.ToLower(r)) + s[size:]
 }
 
 func CamelToSnake(s string) string {

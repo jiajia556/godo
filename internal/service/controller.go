@@ -1,12 +1,13 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	pathpkg "path"
+	"path/filepath"
 	"strings"
 
 	"github.com/jiajia556/godo/internal/utils"
@@ -26,50 +27,67 @@ type method struct {
 }
 
 func GetControllerPathAndNameByRoute(cmdName, controllerRoute string) (path string, name string, err error) {
-	// Validate route format constraints
-	if strings.HasPrefix(controllerRoute, "/") || strings.HasSuffix(controllerRoute, "/") {
-		err = fmt.Errorf("controllerRoute must not start or end with '/'")
+	if err := ValidateCmdName(cmdName); err != nil {
 		return "", "", err
 	}
-
-	// Locate the last directory separator
-	lastSlashPos := strings.LastIndex(controllerRoute, "/")
-	if lastSlashPos == -1 {
-		// Handle simple case with no subdirectories
-		path, err = GetAbsPath(fmt.Sprintf("internal/%s/transport/http/api/controller/%s.go", cmdName, controllerRoute))
-		if err != nil {
-			return "", "", err
-		}
-		return path, utils.CapitalizeFirstLetter(controllerRoute) + "Controller", nil
-	}
-
-	// Split route into directory and component name
-	directory := controllerRoute[:lastSlashPos]
-	component := controllerRoute[lastSlashPos+1:]
-
-	// Construct controller file path
-	path = fmt.Sprintf("internal/%s/transport/http/api/%s/controller/%s.go", cmdName, directory, component)
-	path, err = GetAbsPath(path)
+	segments, err := validateControllerRoute(controllerRoute)
 	if err != nil {
 		return "", "", err
 	}
-	return path, utils.CapitalizeFirstLetter(component) + "Controller", nil
+
+	apiRoot, err := GetAbsPath(filepath.Join("internal", cmdName, "transport", "http", "api"))
+	if err != nil {
+		return "", "", err
+	}
+	component := segments[len(segments)-1]
+	parts := []string{apiRoot}
+	parts = append(parts, segments[:len(segments)-1]...)
+	parts = append(parts, "controller", component+".go")
+	controllerPath := filepath.Clean(filepath.Join(parts...))
+	relative, err := filepath.Rel(apiRoot, controllerPath)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("controller route escapes API root: %q", controllerRoute)
+	}
+	return controllerPath, controllerNameFromSegment(component) + "Controller", nil
 }
 
 func ValidateControllerName(s string) error {
-	if strings.Contains(s, " ") {
-		return errors.New("controller name can not contain spaces")
-	}
-	if strings.Contains(s, "_") {
-		return errors.New("controller name can not contain _")
-	}
-	if strings.Contains(s, "-") {
-		return errors.New("controller name can not contain -")
+	if !token.IsIdentifier(s) {
+		return fmt.Errorf("invalid controller name %q", s)
 	}
 	return nil
 }
 
-func WriteActions(controllerFilePath, controllerStructName string, actions []string) error {
+func validateControllerRoute(route string) ([]string, error) {
+	if route == "" || strings.TrimSpace(route) != route {
+		return nil, fmt.Errorf("controller route must not be empty or contain leading/trailing whitespace")
+	}
+	if strings.Contains(route, "\\") || pathpkg.Clean(route) != route {
+		return nil, fmt.Errorf("controller route must be a clean forward-slash path: %q", route)
+	}
+	segments := strings.Split(route, "/")
+	for _, segment := range segments {
+		if segment == "" || !token.IsIdentifier(controllerNameFromSegment(segment)) {
+			return nil, fmt.Errorf("invalid controller route segment %q", segment)
+		}
+		for _, word := range strings.Split(segment, "_") {
+			if word == "" {
+				return nil, fmt.Errorf("invalid controller route segment %q", segment)
+			}
+		}
+	}
+	return segments, nil
+}
+
+func controllerNameFromSegment(segment string) string {
+	words := strings.Split(segment, "_")
+	for index, word := range words {
+		words[index] = utils.CapitalizeFirstLetter(word)
+	}
+	return strings.Join(words, "")
+}
+
+func WriteActions(controllerFilePath, controllerStructName string, actions []string) (err error) {
 	actionList, err := makeActions(actions)
 	if err != nil {
 		return err
@@ -78,6 +96,11 @@ func WriteActions(controllerFilePath, controllerStructName string, actions []str
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	for _, v := range actionList {
 		actExists, err := ControllerHasMethod(controllerFilePath, controllerStructName, v.Name)
 		if err != nil {
@@ -169,26 +192,30 @@ func makeActions(actions []string) (res []method, err error) {
 	}
 
 	res = make([]method, length)
-	for k, mtd := range actions {
-		mtdDetail := strings.Split(mtd, ":")
-		for i, v := range mtdDetail {
-			if i == 0 {
-				res[k].Name = utils.CapitalizeFirstLetter(v)
-			} else {
-				switch strings.ToLower(v) {
-				case "post":
-					res[k].HTTPMethod = "POST"
-				case "get":
-					res[k].HTTPMethod = "GET"
-				default:
-					err = fmt.Errorf("invalid method: %s", v)
-					return
-				}
+	for index, action := range actions {
+		parts := strings.Split(action, ":")
+		if len(parts) > 2 {
+			return nil, fmt.Errorf("invalid action format %q; expected Name[:HTTPMethod]", action)
+		}
+		for _, word := range strings.Split(parts[0], "_") {
+			if word == "" {
+				return nil, fmt.Errorf("invalid action name %q", parts[0])
 			}
-			if res[k].HTTPMethod == "" {
-				res[k].HTTPMethod = "POST"
+		}
+		name := controllerNameFromSegment(parts[0])
+		if !token.IsIdentifier(name) {
+			return nil, fmt.Errorf("invalid action name %q", parts[0])
+		}
+		res[index] = method{Name: name, HTTPMethod: "POST"}
+		if len(parts) == 2 {
+			httpMethod := strings.ToUpper(parts[1])
+			switch httpMethod {
+			case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "ALL":
+				res[index].HTTPMethod = httpMethod
+			default:
+				return nil, fmt.Errorf("invalid HTTP method %q for action %q", parts[1], parts[0])
 			}
 		}
 	}
-	return
+	return res, nil
 }

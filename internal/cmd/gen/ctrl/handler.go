@@ -11,63 +11,73 @@ import (
 	"github.com/jiajia556/godo/templates"
 )
 
-func genCtrl(cmdName, controllerRoute string, actions []string) {
+var formatGoFiles = utils.FormatGoFiles
+
+func genCtrl(cmdName, controllerRoute string, actions []string) error {
 	var err error
 	if cmdName == "" {
 		cmdName, err = service.GetDefaultCmd()
 		if err != nil {
-			utils.OutputFatal(err)
+			return fmt.Errorf("get default command: %w", err)
 		}
+	}
+	if err := service.ValidateCmdName(cmdName); err != nil {
+		return fmt.Errorf("validate command name: %w", err)
 	}
 
 	if !service.IsCmdExists(cmdName) {
-		utils.OutputFatal("Error: cmd '" + cmdName + "' does not exist")
+		return fmt.Errorf("command %q does not exist", cmdName)
+	}
+	if err := service.RequireCmdType(cmdName, service.CmdTypeAPI); err != nil {
+		return err
 	}
 
 	if controllerRoute == "" {
 		controllerRoute, err = utils.InputStr("please enter controller route:")
 		if err != nil {
-			utils.OutputFatal(err)
+			return fmt.Errorf("read controller route: %w", err)
 		}
 	}
 	if controllerRoute == "" {
-		utils.OutputFatal("Error: controller route is empty")
+		return fmt.Errorf("controller route is empty")
 	}
 
 	path, name, err := service.GetControllerPathAndNameByRoute(cmdName, controllerRoute)
 	if err != nil {
-		utils.OutputFatal(err)
+		return fmt.Errorf("resolve controller path: %w", err)
 	}
 	err = service.ValidateControllerName(name)
 	if err != nil {
-		utils.OutputFatal(err)
+		return fmt.Errorf("validate controller name: %w", err)
 	}
 
 	if utils.IsFileExists(path) {
-		utils.OutputFatal("Error: controller already exists")
+		return fmt.Errorf("controller already exists: %s", path)
 	}
 
-	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
-	if err != nil {
-		fmt.Println("Error creating dir:", err)
-		return
+	if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create controller directory: %w", err)
 	}
 	tmplContent, err := templates.TemplateFS.ReadFile("default/internal/default-api/transport/http/api/controller.templ")
 	if err != nil {
-		utils.OutputFatal(fmt.Errorf("read template file: %w", err))
+		return fmt.Errorf("read controller template: %w", err)
 	}
 	err = template.CreateFile(string(tmplContent),
-		template.ControllerStructNameData{name},
+		template.ControllerStructNameData{ControllerStructName: name},
 		path,
 	)
 	if err != nil {
-		utils.OutputFatal(err)
+		return fmt.Errorf("write controller file: %w", err)
 	}
 
 	if len(actions) > 0 {
 		err = service.WriteActions(path, name, actions)
 		if err != nil {
-			utils.OutputFatal(err)
+			return fmt.Errorf("write controller actions: %w", err)
 		}
 	}
+	if err = formatGoFiles(path); err != nil {
+		return fmt.Errorf("format controller file: %w", err)
+	}
+	return nil
 }

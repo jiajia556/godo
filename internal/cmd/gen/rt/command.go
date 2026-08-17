@@ -7,9 +7,9 @@ var routerCmd = &cobra.Command{
 	Short:   "Generate API router configuration",
 	Long:    "Creates or updates the main router file based on existing controllers",
 	Example: "  godo gen rt",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cmdName, _ := cmd.Flags().GetString("cmd")
-		GenRouter(cmdName)
+		return GenRouter(cmdName)
 	},
 }
 

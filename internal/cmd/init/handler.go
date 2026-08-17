@@ -1,9 +1,9 @@
 package init
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,30 +13,60 @@ import (
 	"github.com/jiajia556/godo/templates"
 )
 
-func initProject(name string) {
+func initProject(name string) error {
+	if err := generateProject(name); err != nil {
+		return err
+	}
+
+	projectDir, err := filepath.Abs(filepath.FromSlash(name))
+	if err != nil {
+		return fmt.Errorf("resolve generated project directory: %w", err)
+	}
+	if err := utils.FormatGoFiles(projectDir); err != nil {
+		return fmt.Errorf("format generated project: %w", err)
+	}
+
+	cmdRunner := utils.NewCommandRunner().WithDir(projectDir)
+	if output, err := cmdRunner.RunCommandOutput("go", "mod", "tidy"); err != nil {
+		return fmt.Errorf("run go mod tidy: %w\n%s", err, output)
+	}
+	return nil
+}
+
+func generateProject(name string) (err error) {
+	targetRoot, err := validateProjectTarget(name)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
+		return fmt.Errorf("create project directory %s: %w", targetRoot, err)
+	}
+
+	complete := false
 	defer func() {
-		cmdRunner := utils.NewCommandRunner().WithDir("./" + name)
-		cmdRunner.RunCommand("go", "mod", "tidy")
-		_, err := exec.LookPath("goimports")
-		if err != nil {
-			cmdRunner.RunCommand("go", "install", "golang.org/x/tools/cmd/goimports@latest")
+		if !complete {
+			_ = os.RemoveAll(targetRoot)
 		}
 	}()
 
 	templateDir := templates.DEFAULT_TEMPLATE_DIR
-	_ = fs.WalkDir(templates.TemplateFS, templateDir, func(originalPath string, d fs.DirEntry, err error) error {
-		if err != nil {
-			utils.OutputFatal(err)
+	err = fs.WalkDir(templates.TemplateFS, templateDir, func(originalPath string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d == nil {
+			return fmt.Errorf("walk template %s: missing directory entry", originalPath)
 		}
 		if d.IsDir() {
 			return nil
 		}
 
-		path := name + strings.TrimPrefix(originalPath, templateDir)
+		relativePath := strings.TrimPrefix(originalPath, templateDir)
+		relativePath = strings.TrimPrefix(relativePath, "/")
+		path := filepath.Join(targetRoot, filepath.FromSlash(relativePath))
 		dirPath := filepath.Dir(path)
-		err = os.MkdirAll(dirPath, 0755)
-		if err != nil {
-			utils.OutputFatal(err)
+		if err := os.MkdirAll(dirPath, 0o755); err != nil {
+			return fmt.Errorf("create directory %s: %w", dirPath, err)
 		}
 
 		if !strings.HasSuffix(path, ".tmpl") {
@@ -46,35 +76,64 @@ func initProject(name string) {
 
 		contentByte, err := fs.ReadFile(templates.TemplateFS, originalPath)
 		if err != nil {
-			utils.OutputFatal(err)
+			return fmt.Errorf("read embedded template %s: %w", originalPath, err)
 		}
 		content := string(contentByte)
 
 		fileName := filepath.Base(targetPath)
 
-		ProjectNameTmpls := []string{
+		projectNameTemplates := []string{
 			"go.mod", "main.go",
 			"godoconfig.json",
 			"outputmsg.go",
 			"config.go",
 		}
-		if slices.Contains(ProjectNameTmpls, fileName) {
+		if slices.Contains(projectNameTemplates, fileName) {
 			data := template.ProjectNameData{ProjectName: name, CmdName: "default-api"}
-			err = template.CreateFile(content, data, targetPath)
-			if err != nil {
-				utils.OutputFatal(err)
+			if err := template.CreateFile(content, data, targetPath); err != nil {
+				return fmt.Errorf("render template %s: %w", originalPath, err)
 			}
 		} else {
-			f, _ := os.Create(targetPath)
-			_, err = f.WriteString(content)
-			if err != nil {
-				utils.OutputFatal(err)
-			}
-			err = f.Close()
-			if err != nil {
-				utils.OutputFatal(err)
+			if err := os.WriteFile(targetPath, contentByte, 0o644); err != nil {
+				return fmt.Errorf("write generated file %s: %w", targetPath, err)
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return fmt.Errorf("generate project: %w", err)
+	}
+
+	complete = true
+	return nil
+}
+
+func validateProjectTarget(name string) (string, error) {
+	if name == "" || strings.TrimSpace(name) != name {
+		return "", fmt.Errorf("project name must not be empty or contain leading/trailing whitespace")
+	}
+
+	target := filepath.FromSlash(name)
+	if filepath.IsAbs(target) || filepath.VolumeName(target) != "" {
+		return "", fmt.Errorf("project name must be a relative path: %q", name)
+	}
+	target = filepath.Clean(target)
+	if filepath.ToSlash(target) != name {
+		return "", fmt.Errorf("project name must use a clean forward-slash path: %q", name)
+	}
+	if target == "." || target == ".." || strings.HasPrefix(target, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("project name escapes the current directory: %q", name)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get current directory: %w", err)
+	}
+	target = filepath.Join(cwd, target)
+	if _, err := os.Lstat(target); err == nil {
+		return "", fmt.Errorf("target already exists: %s", target)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect target %s: %w", target, err)
+	}
+	return target, nil
 }

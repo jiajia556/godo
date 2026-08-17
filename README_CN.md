@@ -12,13 +12,14 @@ GoDo（Go Development Accelerator Tool）是一个面向 Go Web 项目的 CLI �
 ## 功能概览
 
 - `init`：初始化项目结构与 `godoconfig.json`
-- `gen cmd`：生成新的 cmd（一个独立可运行的服务入口）
+- `gen cmd`：生成 API 或 Worker 类型的 cmd
 - `gen ctrl`：生成控制器（可附带 actions）
 - `gen act`：给已有控制器追加 actions
 - `gen rt`：基于控制器注释（AST 分析）生成/更新路由
 - `gen model`：从 SQL 文件或配置生成数据库模型
 - `gen mdw`：生成 Gin 中间件文件
-- `build`：跨平台构建并输出到 `bin/`（构建前会自动生成路由）
+- `build`：跨平台构建并输出到 `bin/`（API 构建前会自动生成路由）
+- `config set`：安全修改 `godoconfig.json` 中允许修改的字段
 
 ---
 
@@ -126,15 +127,14 @@ godo init <project-name>
 
 ### 2）gen cmd：生成新的 cmd 模块
 
-生成一个新的可运行模块（例如新增一个 `admin-api`）：
+默认生成 API 类型；使用 `--type worker`（或 `-t worker`）生成后台 Worker：
 
 ```bash
 godo gen cmd admin-api
+godo gen cmd order-worker --type worker
 ```
 
-生成后通常会新增：
-- `cmd/admin-api/main.go`
-- `internal/admin-api/...`（对应模块的 controller/router/service 等目录）
+cmd 类型会记录在 `godoconfig.json` 的 `cmd_types` 中。API 类型包含 HTTP transport 目录；Worker 类型生成由 `tool-box/runner` 驱动的 `worker.Execute` 任务。
 
 ### 3）gen ctrl：生成控制器
 
@@ -227,7 +227,7 @@ godo build <app-name> [--version <ver>] [--goos <os>] [--goarch <arch>]
 
 说明：
 - `<app-name>` 是 `cmd/` 下的模块名（例如 `default-api`、`admin-api`）。
-- 构建前会自动执行一次路由生成逻辑，确保路由是最新的。
+- 构建 API 类型 cmd 前会自动更新路由；Worker 类型会跳过 HTTP 路由生成。
 
 示例：
 
@@ -252,7 +252,7 @@ godo build default-api --goos linux --goarch amd64
 godo
 ├── init  [project-name]
 ├── gen
-│   ├── cmd   [cmd-name]
+│   ├── cmd   [cmd-name] [--type, -t <api|worker>]
 │   ├── ctrl  [controller-route] [actions...]
 │   │        --cmd <name>
 │   ├── act   [actions...]
@@ -262,15 +262,18 @@ godo
 │   │        --cmd <name>
 │   ├── model <config.json|schema.sql>
 │   └── mdw   [middleware-name...]
-└── build [cmd-name]
-         --version, -v <ver>
-         --goos <os>
-         --goarch <arch>
+├── build [cmd-name]
+│        --version, -v <ver>
+│        --goos <os>
+│        --goarch <arch>
+└── config
+    ├── set [key] [value]
+    └── set-target [goos] [goarch]
 ```
 
 说明：
 - 多处出现的 `--cmd` 用于指定要操作的命令模块（例如 `default-api`）。为空时会按配置/项目结构推断。
-- `build` 会在构建前调用路由生成逻辑（等价于先执行一次路由更新）。
+- `build` 仅在构建 API 类型 cmd 前调用路由生成逻辑；Worker 类型会跳过。
 
 ---
 
@@ -278,7 +281,7 @@ godo
 
 在控制器方法注释中使用：
 
-- `@http_method GET|POST`
+- `@http_method GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|ALL`
 - `@middleware <name...>`（空格分隔）
 
 示例（只演示注解写法，方法体内容可自行实现）：
@@ -309,10 +312,24 @@ godo
 ```
 
 字段含义：
+
 - `project_name`：项目名 / 模块名
 - `default_cmd`：默认 cmd 名称（例如 `default-api`）
 - `default_goos`：默认构建目标 OS（可被 `build --goos` 覆盖）
 - `default_goarch`：默认构建目标架构（可被 `build --goarch` 覆盖）
+
+使用 `config set` 修改可写字段：
+
+```bash
+godo config set default_cmd jobs-worker
+godo config set default_goos windows
+godo config set default_goarch amd64
+godo config set-target js wasm
+```
+
+只允许修改 `default_cmd`、`default_goos` 和 `default_goarch`。命令会检查 `default_cmd` 是否存在，并验证 GOOS/GOARCH 是否为 Go 支持的构建目标。`project_name` 和 `cmd_types` 由 GoDo 自行维护，不能通过该命令修改。
+
+需要同时修改两个构建目标字段时请使用 `config set-target`，特别是 `js/wasm` 这类无法通过两个有效中间状态逐项切换的组合。
 
 ---
 

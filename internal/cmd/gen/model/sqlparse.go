@@ -18,6 +18,8 @@ type fieldInfo struct {
 	jsonTag  string
 }
 
+var createTableHeaderRE = regexp.MustCompile("(?i)^\\s*CREATE\\s+(?:TEMPORARY\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?:(?:`[^`]+`|[A-Za-z0-9_$]+)\\s*\\.\\s*)?(?:`([^`]+)`|([A-Za-z0-9_$]+))")
+
 // GenerateStruct generates Go struct definition from SQL create table statement
 func GenerateModelStruct(sql string) (string, string, string, error) {
 	tableName, fields, err := parseSQL(sql)
@@ -93,38 +95,99 @@ func extractPrimaryKeyColumns(defs []string) []string {
 }
 
 func extractTableName(sql string) (string, error) {
-	re := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+[\x60]?(\w+)[\x60]?`)
-	matches := re.FindStringSubmatch(sql)
-	if len(matches) < 2 {
+	matches := createTableHeaderRE.FindStringSubmatch(sql)
+	if len(matches) < 3 {
 		return "", fmt.Errorf("table name not found")
 	}
-	return toCamelCase(matches[1]), nil
+	tableName := matches[1]
+	if tableName == "" {
+		tableName = matches[2]
+	}
+	return tableName, nil
 }
 
 // extractFieldDefinitions extracts column definitions from a CREATE TABLE statement.
 // It uses a simple state machine (paren nesting + quote tracking) so commas in
 // types, comments, or indexes won't break the split.
 func extractFieldDefinitions(sql string) ([]string, error) {
-	// Find the first "(" that begins the column definition block.
-	start := strings.Index(sql, "(")
-	if start < 0 {
-		return nil, fmt.Errorf("field definitions not found")
+	header := createTableHeaderRE.FindStringIndex(sql)
+	if header == nil {
+		return nil, fmt.Errorf("CREATE TABLE header not found")
 	}
-
-	// Find the matching closing ")" (taking nested parentheses into account).
+	start := -1
 	level := 0
 	end := -1
-	for i := start; i < len(sql); i++ {
+	var quote byte
+	inLineComment := false
+	inBlockComment := false
+	escaped := false
+	for i := header[1]; i < len(sql); i++ {
 		ch := sql[i]
-		if ch == '(' {
+		next := byte(0)
+		if i+1 < len(sql) {
+			next = sql[i+1]
+		}
+		if inLineComment {
+			if ch == '\n' {
+				inLineComment = false
+			}
+			continue
+		}
+		if inBlockComment {
+			if ch == '*' && next == '/' {
+				inBlockComment = false
+				i++
+			}
+			continue
+		}
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' && quote != '`' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				if next == quote {
+					i++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+
+		switch {
+		case ch == '-' && next == '-':
+			inLineComment = true
+			i++
+		case ch == '#':
+			inLineComment = true
+		case ch == '/' && next == '*':
+			inBlockComment = true
+			i++
+		case ch == '\'' || ch == '"' || ch == '`':
+			quote = ch
+		case ch == '(':
+			if start == -1 {
+				start = i
+			}
 			level++
-		} else if ch == ')' {
+		case ch == ')':
+			if start == -1 {
+				continue
+			}
 			level--
 			if level == 0 {
 				end = i
-				break
+				i = len(sql)
 			}
 		}
+	}
+	if start == -1 {
+		return nil, fmt.Errorf("field definitions not found")
 	}
 	if end == -1 || end <= start {
 		return nil, fmt.Errorf("field definitions not found (unmatched parentheses)")
@@ -153,6 +216,7 @@ func splitFieldDefinitions(body string) []string {
 	level := 0
 	inSingle := false
 	inDouble := false
+	inBacktick := false
 	escaped := false
 
 	for i := 0; i < len(body); i++ {
@@ -167,20 +231,25 @@ func splitFieldDefinitions(body string) []string {
 
 		if !escaped {
 			// Toggle quote state (only when not already inside the other quote kind).
-			if ch == '\'' && !inDouble {
+			if ch == '\'' && !inDouble && !inBacktick {
 				inSingle = !inSingle
 				cur.WriteByte(ch)
 				continue
 			}
-			if ch == '"' && !inSingle {
+			if ch == '"' && !inSingle && !inBacktick {
 				inDouble = !inDouble
+				cur.WriteByte(ch)
+				continue
+			}
+			if ch == '`' && !inSingle && !inDouble {
+				inBacktick = !inBacktick
 				cur.WriteByte(ch)
 				continue
 			}
 		}
 
 		// When not inside quotes, update parentheses nesting.
-		if !inSingle && !inDouble {
+		if !inSingle && !inDouble && !inBacktick {
 			if ch == '(' {
 				level++
 			} else if ch == ')' {
@@ -191,7 +260,7 @@ func splitFieldDefinitions(body string) []string {
 		}
 
 		// Split on top-level comma.
-		if ch == ',' && level == 0 && !inSingle && !inDouble {
+		if ch == ',' && level == 0 && !inSingle && !inDouble && !inBacktick {
 			part := strings.TrimSpace(cur.String())
 			if part != "" {
 				defs = append(defs, part)
@@ -213,17 +282,19 @@ func splitFieldDefinitions(body string) []string {
 }
 
 func parseField(def string, primaryKeyCols map[string]struct{}) (fieldInfo, error) {
+	if isTableConstraint(def) {
+		return fieldInfo{}, nil
+	}
 	// Improved regex to fully capture type description
-	re := regexp.MustCompile("[\x60]?(\\w+)[\x60]?\\s+(.+)")
+	re := regexp.MustCompile("^\\s*(?:`([^`]+)`|([A-Za-z0-9_$]+))\\s+(.+)$")
 	matches := re.FindStringSubmatch(def)
-	if len(matches) < 3 {
+	if len(matches) < 4 {
 		return fieldInfo{}, fmt.Errorf("invalid field definition: %s", def)
 	}
 
 	fieldName := matches[1]
-	// Keep legacy behavior: only generate fields for columns starting with a-z.
-	if len(fieldName) == 0 || []byte(fieldName)[0] < 'a' || []byte(fieldName)[0] > 'z' {
-		return fieldInfo{}, nil
+	if fieldName == "" {
+		fieldName = matches[2]
 	}
 
 	// Apply table-level PRIMARY KEY constraints.
@@ -234,34 +305,31 @@ func parseField(def string, primaryKeyCols map[string]struct{}) (fieldInfo, erro
 		// (If the column already has inline primary key, this is idempotent.)
 		// Defer actual insertion after mapTypeAndTags so we don't lose other tags.
 	}
-	typeInfo := strings.ToLower(strings.TrimSpace(matches[2]))
+	typeInfo := strings.TrimSpace(matches[3])
+	lowerTypeInfo := strings.ToLower(typeInfo)
 
 	// Preserve the original type mapping.
 	goType, tags := mapTypeAndTags(typeInfo)
-	if fieldName == "id" {
-		// Special case for "id" field: use uint64 and primary key tag by default.
-		goType = "uint64"
-	}
 	if _, ok := primaryKeyCols[strings.ToLower(fieldName)]; ok {
 		tags["primaryKey"] = "true"
 	}
 
 	// Conservative enhancement: detect common constraints and add gorm tags.
 	// (Do not change the Go type mapping.)
-	if strings.Contains(typeInfo, "unsigned") {
+	if strings.Contains(lowerTypeInfo, "unsigned") {
 		tags["unsigned"] = "true"
 	}
-	if strings.Contains(typeInfo, "auto_increment") || strings.Contains(typeInfo, "autoincrement") {
+	if strings.Contains(lowerTypeInfo, "auto_increment") || strings.Contains(lowerTypeInfo, "autoincrement") {
 		tags["autoIncrement"] = "true"
 	}
-	if strings.Contains(typeInfo, "primary key") || strings.Contains(typeInfo, "primary_key") {
+	if strings.Contains(lowerTypeInfo, "primary key") || strings.Contains(lowerTypeInfo, "primary_key") {
 		tags["primaryKey"] = "true"
 	}
-	if strings.Contains(typeInfo, "not null") {
+	if strings.Contains(lowerTypeInfo, "not null") {
 		tags["notNull"] = "true"
 	}
 	// MySQL generated columns should be query-only in GORM.
-	if isGeneratedColumn(typeInfo) {
+	if isGeneratedColumn(lowerTypeInfo) {
 		tags["->"] = "true"
 	}
 	// Best-effort DEFAULT value extraction.
@@ -290,6 +358,19 @@ func parseField(def string, primaryKeyCols map[string]struct{}) (fieldInfo, erro
 		gormTags: buildGormTags(fieldName, tags),
 		jsonTag:  toSnakeCase(fieldName),
 	}, nil
+}
+
+func isTableConstraint(def string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(def))
+	for _, prefix := range []string{
+		"PRIMARY KEY", "UNIQUE ", "KEY ", "INDEX ", "CONSTRAINT ",
+		"FOREIGN KEY", "CHECK ", "FULLTEXT ", "SPATIAL ",
+	} {
+		if strings.HasPrefix(upper, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func isGeneratedColumn(typeInfo string) bool {

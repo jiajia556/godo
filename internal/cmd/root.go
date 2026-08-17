@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/jiajia556/godo/internal/cmd/build"
+	configcmd "github.com/jiajia556/godo/internal/cmd/config"
 	"github.com/jiajia556/godo/internal/cmd/gen"
 	initproj "github.com/jiajia556/godo/internal/cmd/init"
 	"github.com/spf13/cobra"
@@ -26,5 +27,6 @@ func init() {
 		initproj.GetCommand(),
 		gen.GetCommand(),
 		build.GetCommand(),
+		configcmd.GetCommand(),
 	)
 }

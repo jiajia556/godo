@@ -1,11 +1,8 @@
 package model
 
 import (
-	"bufio"
 	"database/sql"
-	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,84 +14,152 @@ import (
 	"github.com/jiajia556/godo/templates"
 )
 
-func genModel(from string) {
-	defer runPostGenerationTasks()
-
+func genModel(from string) error {
 	var createTables []string
 	var err error
-	if strings.HasSuffix(from, ".sql") {
+	if strings.EqualFold(filepath.Ext(from), ".sql") {
 		createTables, err = extractCreateTablesFromSqlFile(from)
 	} else {
 		createTables, err = extractCreateTablesFromConfigFile(from)
 	}
 	if err != nil {
-		log.Fatalf("Failed to extract create tables: %v", err)
+		return fmt.Errorf("extract CREATE TABLE statements from %s: %w", from, err)
+	}
+	if len(createTables) == 0 {
+		return fmt.Errorf("no CREATE TABLE statements found in %s", from)
 	}
 
 	recordContent, err := templates.TemplateFS.ReadFile("default/internal/common/models/record.go.templ")
 	if err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error reading record template: %v", err))
+		return fmt.Errorf("read record template: %w", err)
 	}
 	listContent, err := templates.TemplateFS.ReadFile("default/internal/common/models/list.go.templ")
 	if err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error reading list template: %v", err))
+		return fmt.Errorf("read list template: %w", err)
 	}
-	modelCOntent, err := templates.TemplateFS.ReadFile("default/internal/common/models/model.go.templ")
+	modelContent, err := templates.TemplateFS.ReadFile("default/internal/common/models/model.go.templ")
 	if err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error reading model template: %v", err))
+		return fmt.Errorf("read model template: %w", err)
 	}
 
+	var generatedFiles []string
 	for _, createTable := range createTables {
-		generateModelFromSQL(createTable, string(recordContent), string(listContent), string(modelCOntent))
+		files, err := generateModelFromSQL(createTable, string(recordContent), string(listContent), string(modelContent))
+		if err != nil {
+			return err
+		}
+		generatedFiles = append(generatedFiles, files...)
 	}
+	return runPostGenerationTasks(generatedFiles)
 }
 
 func extractCreateTablesFromSqlFile(filePath string) ([]string, error) {
-	file, err := os.Open(filePath)
+	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var createTables []string
-	scanner := bufio.NewScanner(file)
-	var currentStmt strings.Builder
-	capturing := false
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		if strings.HasPrefix(line, "--") || strings.HasPrefix(line, "/*") {
-			continue
-		}
-		if strings.HasPrefix(line, "CREATE TABLE") {
-			capturing = true
-			currentStmt.WriteString(line + "\n")
-			continue
-		}
-
-		if strings.HasPrefix(line, ")") && strings.HasSuffix(line, ";") {
-			capturing = false
-			currentStmt.WriteString(line + "\n")
-			createTables = append(createTables, currentStmt.String())
-			currentStmt = strings.Builder{}
-		}
-
-		if capturing {
-			currentStmt.WriteString(line + "\n")
-		}
+		return nil, fmt.Errorf("read SQL file: %w", err)
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
+	statements, err := splitSQLStatements(string(content))
+	if err != nil {
+		return nil, fmt.Errorf("parse SQL file: %w", err)
 	}
-
-	// Flush the last statement if we reached EOF while capturing.
-	if capturing && currentStmt.Len() > 0 {
-		createTables = append(createTables, currentStmt.String())
+	createTables := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		if createTableHeaderRE.MatchString(statement) {
+			createTables = append(createTables, strings.TrimSpace(statement)+";")
+		}
 	}
 
 	return createTables, nil
+}
+
+func splitSQLStatements(content string) ([]string, error) {
+	var statements []string
+	var current strings.Builder
+	var quote byte
+	inLineComment := false
+	inBlockComment := false
+	escaped := false
+
+	flush := func() {
+		if statement := strings.TrimSpace(current.String()); statement != "" {
+			statements = append(statements, statement)
+		}
+		current.Reset()
+	}
+
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		next := byte(0)
+		if i+1 < len(content) {
+			next = content[i+1]
+		}
+
+		if inLineComment {
+			if ch == '\n' {
+				inLineComment = false
+				current.WriteByte(ch)
+			}
+			continue
+		}
+		if inBlockComment {
+			if ch == '*' && next == '/' {
+				inBlockComment = false
+				i++
+			}
+			continue
+		}
+		if quote != 0 {
+			current.WriteByte(ch)
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' && quote != '`' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				if next == quote {
+					current.WriteByte(next)
+					i++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+
+		switch {
+		case ch == '-' && next == '-':
+			current.WriteByte(' ')
+			inLineComment = true
+			i++
+		case ch == '#':
+			current.WriteByte(' ')
+			inLineComment = true
+		case ch == '/' && next == '*':
+			current.WriteByte(' ')
+			inBlockComment = true
+			i++
+		case ch == '\'' || ch == '"' || ch == '`':
+			quote = ch
+			current.WriteByte(ch)
+		case ch == ';':
+			flush()
+		default:
+			current.WriteByte(ch)
+		}
+	}
+
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated %q quote", quote)
+	}
+	if inBlockComment {
+		return nil, fmt.Errorf("unterminated block comment")
+	}
+	flush()
+	return statements, nil
 }
 
 func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
@@ -113,17 +178,17 @@ func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return nil, errors.New("Failed to connect to database:" + err.Error())
+		return nil, fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
 	if err = db.Ping(); err != nil {
-		return nil, errors.New("Database ping failed:" + err.Error())
+		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
 	rows, err := db.Query("SHOW TABLES")
 	if err != nil {
-		return nil, errors.New("Failed to execute SHOW TABLES:" + err.Error())
+		return nil, fmt.Errorf("execute SHOW TABLES: %w", err)
 	}
 	defer rows.Close()
 
@@ -131,14 +196,13 @@ func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
 	for rows.Next() {
 		var tableName string
 		if err = rows.Scan(&tableName); err != nil {
-			log.Printf("Failed to scan table name: %v", err)
-			continue
+			return nil, fmt.Errorf("scan table name: %w", err)
 		}
 		tables = append(tables, tableName)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, errors.New("Failed to iterate over rows:" + err.Error())
+		return nil, fmt.Errorf("iterate over tables: %w", err)
 	}
 
 	var createTables []string
@@ -147,8 +211,7 @@ func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
 		var tableName, createStmt string
 		err = db.QueryRow(query).Scan(&tableName, &createStmt)
 		if err != nil {
-			log.Printf("Failed to get create statement for table %s: %v", table, err)
-			continue
+			return nil, fmt.Errorf("get CREATE TABLE statement for %s: %w", table, err)
 		}
 		createStmt += ";"
 		createTables = append(createTables, createStmt)
@@ -156,45 +219,58 @@ func extractCreateTablesFromConfigFile(filePath string) ([]string, error) {
 	return createTables, nil
 }
 
-func generateModelFromSQL(sql, recordTmpl, listTmpl, modelTmpl string) {
+func generateModelFromSQL(sql, recordTmpl, listTmpl, modelTmpl string) ([]string, error) {
 	// Generate model structure from SQL
 	structText, structName, tableName, err := GenerateModelStruct(sql)
 	if err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error generating model struct: %v", err))
-		return
+		return nil, fmt.Errorf("generate model struct: %w", err)
 	}
 
 	// Prepare model package name
 	modelPkg := strings.ToLower(structName)
 
 	// Generate record file
-	generateModelFile(modelPkg, tableName, structName, structText, sql, recordTmpl, "record.go")
+	generatedFiles := make([]string, 0, 3)
+	if path, err := generateModelFile(modelPkg, tableName, structName, structText, sql, recordTmpl, "record.go"); err != nil {
+		return nil, err
+	} else if path != "" {
+		generatedFiles = append(generatedFiles, path)
+	}
 
 	// Generate list file
-	generateModelFile(modelPkg, tableName, structName, structText, sql, listTmpl, "list.go")
+	if path, err := generateModelFile(modelPkg, tableName, structName, structText, sql, listTmpl, "list.go"); err != nil {
+		return nil, err
+	} else if path != "" {
+		generatedFiles = append(generatedFiles, path)
+	}
 
 	// Generate model file
-	generateModelFile(modelPkg, tableName, structName, structText, sql, modelTmpl, "model.go")
+	if path, err := generateModelFile(modelPkg, tableName, structName, structText, sql, modelTmpl, "model.go"); err != nil {
+		return nil, err
+	} else if path != "" {
+		generatedFiles = append(generatedFiles, path)
+	}
+	return generatedFiles, nil
 }
 
-func generateModelFile(modelPkg, tableName, structName, structText, createDDL, templateContent, fileName string) {
+func generateModelFile(modelPkg, tableName, structName, structText, createDDL, templateContent, fileName string) (string, error) {
 	// Set up file paths
 	var err error
 	path := filepath.Join("internal/common/models", modelPkg, fileName)
 	path, err = service.GetAbsPath(path)
 	if err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error getting absolute path: %v", err))
+		return "", fmt.Errorf("resolve model file %s: %w", fileName, err)
 	}
 
 	// Skip if file already exists
 	if utils.IsFileExists(path) {
-		return
+		return "", nil
 	}
 
 	// Prepare template data
 	projectName, err := service.GetProjectName()
 	if err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error getting project name: %v", err))
+		return "", fmt.Errorf("get project name: %w", err)
 	}
 
 	createDDL = strings.ReplaceAll(createDDL, "\r\n", " ")
@@ -213,17 +289,28 @@ func generateModelFile(modelPkg, tableName, structName, structText, createDDL, t
 
 	// Create directory structure
 	dir := filepath.Dir(path)
-	if err = os.MkdirAll(dir, os.ModePerm); err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error creating directory %s: %v", dir, err))
-		return
+	if err = os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create model directory %s: %w", dir, err)
 	}
 
 	// Generate file from template
 	if err = template.CreateFile(templateContent, data, path); err != nil {
-		utils.OutputFatal(fmt.Sprintf("Error creating %s: %v", fileName, err))
+		return "", fmt.Errorf("write model file %s: %w", fileName, err)
 	}
+	return path, nil
 }
 
-func runPostGenerationTasks() {
-	utils.RunCommand("go", "mod", "tidy")
+func runPostGenerationTasks(generatedFiles []string) error {
+	if err := utils.FormatGoFiles(generatedFiles...); err != nil {
+		return fmt.Errorf("format generated models: %w", err)
+	}
+	projectRoot, err := service.GetProjectRoot()
+	if err != nil {
+		return fmt.Errorf("get project root: %w", err)
+	}
+	output, err := utils.NewCommandRunner().WithDir(projectRoot).RunCommandOutput("go", "mod", "tidy")
+	if err != nil {
+		return fmt.Errorf("run go mod tidy: %w\n%s", err, strings.TrimSpace(output))
+	}
+	return nil
 }

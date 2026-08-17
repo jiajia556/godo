@@ -8,8 +8,8 @@ var modelCmd = &cobra.Command{
 	Long:    "Generate Go model files from SQL schema definitions or from existing database.\nCreates record and list type files based on SQL CREATE TABLE statements.",
 	Example: "  godo gen model config.json\n  godo gen model schema.sql",
 	Args:    cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		genModel(args[0])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return genModel(args[0])
 	},
 }
 

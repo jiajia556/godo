@@ -2,15 +2,17 @@ package build
 
 import (
 	"github.com/jiajia556/godo/internal/cmd/gen/rt"
+	"github.com/jiajia556/godo/internal/service"
 	"github.com/spf13/cobra"
 )
 
 var buildCmd = &cobra.Command{
 	Use:     "build [cmd-name]",
 	Short:   "Build a cmd module and output the binary to bin/",
-	Long:    "Build compiles the specified cmd module (e.g. 'default-api') and writes the binary to the project's bin/ directory.\n\nBefore building, it will regenerate the HTTP router (same as running 'godo gen rt') to keep routes in sync with controllers.\n\nYou can optionally set the build version and cross-compile by specifying --goos/--goarch.",
-	Example: "  godo build default-api\n  godo build default-api --version v1.2.0\n  godo build payment-service --goos linux --goarch amd64",
-	Run: func(cmd *cobra.Command, args []string) {
+	Long:    "Build compiles the specified cmd module (e.g. 'default-api') and writes the binary to the project's bin/ directory.\n\nBefore building an API command, it will regenerate the HTTP router (same as running 'godo gen rt') to keep routes in sync with controllers. Worker commands are built directly.\n\nYou can optionally set the build version and cross-compile by specifying --goos/--goarch.",
+	Example: "  godo build default-api\n  godo build jobs-worker\n  godo build default-api --version v1.2.0\n  godo build payment-service --goos linux --goarch amd64",
+	Args:    cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cmdName := ""
 		if len(args) > 0 {
 			cmdName = args[0]
@@ -19,9 +21,17 @@ var buildCmd = &cobra.Command{
 		goos, _ := cmd.Flags().GetString("goos")
 		goarch, _ := cmd.Flags().GetString("goarch")
 
-		rt.GenRouter(cmdName)
+		options, err := resolveBuildOptions(cmdName, version, goos, goarch)
+		if err != nil {
+			return err
+		}
+		if options.CmdType == service.CmdTypeAPI {
+			if err := rt.GenRouter(options.CmdName); err != nil {
+				return err
+			}
+		}
 
-		build(cmdName, version, goos, goarch)
+		return build(options)
 	},
 }
 

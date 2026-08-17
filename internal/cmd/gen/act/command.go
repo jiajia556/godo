@@ -7,10 +7,10 @@ var actionCmd = &cobra.Command{
 	Short:   "Add actions to an existing controller",
 	Long:    "Adds one or more action methods to a specified controller",
 	Example: "  godo gen act getInfo --ctrl user/user\n  god gen act search list",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cmdName, _ := cmd.Flags().GetString("cmd")
 		controllerRoute, _ := cmd.Flags().GetString("ctrl")
-		genAction(cmdName, controllerRoute, args)
+		return genAction(cmdName, controllerRoute, args)
 	},
 }
 

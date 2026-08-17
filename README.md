@@ -12,13 +12,14 @@ It’s especially handy if you’re used to building APIs with **Gin + GORM** an
 ## Features
 
 - `init`: initialize a project structure and generate `godoconfig.json`
-- `gen cmd`: generate a new cmd module (an independent runnable service entry)
+- `gen cmd`: generate an API or Worker cmd module
 - `gen ctrl`: generate a controller (optionally with actions)
 - `gen act`: append actions to an existing controller
 - `gen rt`: generate/update routes based on controller comments (AST-based)
 - `gen model`: generate database models from a SQL file or a config file
 - `gen mdw`: generate Gin middleware files
-- `build`: cross-platform build and output to `bin/` (routes are regenerated before building)
+- `build`: cross-platform build and output to `bin/` (API routes are regenerated before building)
+- `config set`: safely update modifiable `godoconfig.json` fields
 
 ---
 
@@ -126,15 +127,14 @@ Notes:
 
 ### 2) `gen cmd`: generate a new cmd module
 
-To generate a new runnable module (for example, `admin-api`):
+API is the default type. Use `--type worker` (or `-t worker`) for a background Worker:
 
 ```bash
 godo gen cmd admin-api
+godo gen cmd order-worker --type worker
 ```
 
-Typically it adds:
-- `cmd/admin-api/main.go`
-- `internal/admin-api/...` (controller/router/service directories for that module)
+Command types are stored in `godoconfig.json` under `cmd_types`. API commands include HTTP transport directories; Worker commands include a `worker.Execute` task driven by `tool-box/runner`.
 
 ### 3) `gen ctrl`: generate a controller
 
@@ -227,7 +227,7 @@ godo build <app-name> [--version <ver>] [--goos <os>] [--goarch <arch>]
 
 Notes:
 - `<app-name>` is the module name under `cmd/` (e.g. `default-api`, `admin-api`).
-- Before building, it regenerates routes once to keep them up-to-date.
+- Before building an API command, it regenerates routes once. Worker commands skip HTTP route generation.
 
 Examples:
 
@@ -252,7 +252,7 @@ godo build default-api --goos linux --goarch amd64
 godo
 ├── init  [project-name]
 ├── gen
-│   ├── cmd   [cmd-name]
+│   ├── cmd   [cmd-name] [--type, -t <api|worker>]
 │   ├── ctrl  [controller-route] [actions...]
 │   │        --cmd <name>
 │   ├── act   [actions...]
@@ -262,10 +262,13 @@ godo
 │   │        --cmd <name>
 │   ├── model <config.json|schema.sql>
 │   └── mdw   [middleware-name...]
-└── build [cmd-name]
-         --version, -v <ver>
-         --goos <os>
-         --goarch <arch>
+├── build [cmd-name]
+│        --version, -v <ver>
+│        --goos <os>
+│        --goarch <arch>
+└── config
+    ├── set [key] [value]
+    └── set-target [goos] [goarch]
 ```
 
 ---
@@ -274,7 +277,7 @@ godo
 
 Use annotations in controller method comments:
 
-- `@http_method GET|POST`
+- `@http_method GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|ALL`
 - `@middleware <name...>` (space-separated)
 
 Example (annotation format only):
@@ -305,10 +308,24 @@ A minimal example:
 ```
 
 Fields:
+
 - `project_name`: project/module name
 - `default_cmd`: default cmd module name (e.g. `default-api`)
 - `default_goos`: default target OS (can be overridden by `build --goos`)
 - `default_goarch`: default target arch (can be overridden by `build --goarch`)
+
+Use `config set` to update writable fields:
+
+```bash
+godo config set default_cmd jobs-worker
+godo config set default_goos windows
+godo config set default_goarch amd64
+godo config set-target js wasm
+```
+
+Only `default_cmd`, `default_goos`, and `default_goarch` are writable. The command validates that `default_cmd` exists and that GOOS/GOARCH form a supported Go build target. `project_name` and `cmd_types` are managed by GoDo and cannot be changed with this command.
+
+Use `config set-target` when changing both target fields, especially for combinations such as `js/wasm` that cannot be reached through two independently valid intermediate targets.
 
 ---
 

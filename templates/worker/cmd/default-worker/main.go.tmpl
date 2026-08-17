@@ -1,0 +1,38 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"time"
+
+	"{{.ProjectName}}/internal/{{.CmdName}}/config"
+	"{{.ProjectName}}/internal/{{.CmdName}}/worker"
+
+	"github.com/jiajia556/tool-box/mysqlx"
+	"github.com/jiajia556/tool-box/runner"
+)
+
+const workerInterval = 5 * time.Second
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
+	var configPath string
+	flag.StringVar(&configPath, "config", "./config.yaml", "Config file path")
+	flag.Parse()
+
+	if err := config.Load(configPath); err != nil {
+		return err
+	}
+	if err := mysqlx.InitMysql(config.GetConfig().Mysql); err != nil {
+		return err
+	}
+
+	workerRunner := runner.New(workerInterval, worker.Execute)
+	return workerRunner.Run(context.Background())
+}
